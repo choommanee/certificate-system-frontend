@@ -1,0 +1,457 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Box,
+  Card,
+  CardContent,
+  Typography,
+  Button,
+  Paper,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemIcon,
+  Chip,
+  CircularProgress,
+  Alert,
+  Grid,
+} from '@mui/material';
+import {
+  Assignment,
+  PendingActions,
+  CheckCircle,
+  Schedule,
+  TrendingUp,
+  People,
+  Description,
+  Verified,
+  Warning,
+  Info,
+  Error,
+} from '@mui/icons-icon';
+import { useAuth } from '../contexts/AuthContext';
+import DashboardLayout from '../components/dashboard/DashboardLayout';
+import { analyticsService } from '../services/analyticsService';
+import { DashboardOverview, SystemMetrics } from '../types';
+
+const DashboardPage: React.FC = () => {
+  const { user } = useAuth();
+  const [dashboardData, setDashboardData] = useState<DashboardOverview | null>(null);
+  const [systemMetrics, setSystemMetrics] = useState<SystemMetrics | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const getWelcomeMessage = () => {
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? 'สวัสดีตอนเช้า' : hour < 18 ? 'สวัสดีตอนบ่าย' : 'สวัสดีตอนเย็น';
+    return `${greeting}, ${user?.first_name || user?.email}`;
+  };
+
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      if (!user || user.role === 'student') {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        setLoading(true);
+        const [overview, metrics] = await Promise.all([
+          analyticsService.getDashboardOverview(),
+          analyticsService.getSystemMetrics()
+        ]);
+        setDashboardData(overview);
+        setSystemMetrics(metrics);
+      } catch (err) {
+        console.error('Failed to fetch dashboard data:', err);
+        setError('ไม่สามารถโหลดข้อมูลแดชบอร์ดได้');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDashboardData();
+  }, [user]);
+
+  const renderStudentDashboard = () => (
+    <Box display="flex" flexDirection="column" gap={3}>
+      <Box>
+        <Typography variant="h4" gutterBottom>
+          {getWelcomeMessage()}
+        </Typography>
+        <Typography variant="subtitle1" color="text.secondary" gutterBottom>
+          ยินดีต้อนรับสู่ระบบเกียรติบัตรออนไลน์ คณะเศรษฐศาสตร์
+        </Typography>
+      </Box>
+
+      <Box display="flex" flexDirection={{ xs: 'column', md: 'row' }} gap={3}>
+        <Box flex={1}>
+          <Card>
+            <CardContent>
+              <Box display="flex" alignItems="center" mb={2}>
+                <Assignment color="primary" sx={{ mr: 1 }} />
+                <Typography variant="h6">เกียรติบัตรของฉัน</Typography>
+              </Box>
+              <Typography variant="h3" color="primary">
+                5
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                เกียรติบัตรที่ได้รับทั้งหมด
+              </Typography>
+            </CardContent>
+          </Card>
+        </Box>
+
+        <Box flex={1}>
+          <Card>
+            <CardContent>
+              <Box display="flex" alignItems="center" mb={2}>
+                <PendingActions color="warning" sx={{ mr: 1 }} />
+                <Typography variant="h6">รอการอนุมัติ</Typography>
+              </Box>
+              <Typography variant="h3" color="warning.main">
+                2
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                เกียรติบัตรที่รอการอนุมัติ
+              </Typography>
+            </CardContent>
+          </Card>
+        </Box>
+
+        <Box flex={1}>
+          <Card>
+            <CardContent>
+              <Box display="flex" alignItems="center" mb={2}>
+                <CheckCircle color="success" sx={{ mr: 1 }} />
+                <Typography variant="h6">อนุมัติแล้ว</Typography>
+              </Box>
+              <Typography variant="h3" color="success.main">
+                3
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                เกียรติบัตรที่อนุมัติแล้ว
+              </Typography>
+            </CardContent>
+          </Card>
+        </Box>
+      </Box>
+
+      <Box>
+        <Card>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              เกียรติบัตรล่าสุด
+            </Typography>
+            <List>
+              <ListItem>
+                <ListItemIcon>
+                  <Assignment />
+                </ListItemIcon>
+                <ListItemText
+                  primary="เกียรติบัตรการเข้าร่วมสัมมนา"
+                  secondary="วันที่ 15 มกราคม 2567"
+                />
+                <Chip label="อนุมัติแล้ว" color="success" size="small" />
+              </ListItem>
+              <ListItem>
+                <ListItemIcon>
+                  <Assignment />
+                </ListItemIcon>
+                <ListItemText
+                  primary="เกียรติบัตรการแข่งขันตอบปัญหา"
+                  secondary="วันที่ 10 มกราคม 2567"
+                />
+                <Chip label="รอการอนุมัติ" color="warning" size="small" />
+              </ListItem>
+            </List>
+            <Box mt={2}>
+              <Button variant="outlined" fullWidth>
+                ดูเกียรติบัตรทั้งหมด
+              </Button>
+            </Box>
+          </CardContent>
+        </Card>
+      </Box>
+    </Box>
+  );
+
+  const renderStaffDashboard = () => {
+    if (loading) {
+      return (
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+          <CircularProgress size={60} />
+        </Box>
+      );
+    }
+
+    if (error) {
+      return (
+        <Alert severity="error" sx={{ mb: 3 }}>
+          {error}
+        </Alert>
+      );
+    }
+                <PendingActions color="warning" sx={{ mr: 1 }} />
+                <Typography variant="h6">รอการอนุมัติ</Typography>
+              </Box>
+              <Typography variant="h3" color="warning.main">
+                8
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                คำขอที่รอการอนุมัติ
+              </Typography>
+            </CardContent>
+          </Card>
+        </Box>
+
+        <Box flex={1}>
+          <Card>
+            <CardContent>
+              <Box display="flex" alignItems="center" mb={2}>
+                <CheckCircle color="success" sx={{ mr: 1 }} />
+                <Typography variant="h6">อนุมัติแล้ว</Typography>
+              </Box>
+              <Typography variant="h3" color="success.main">
+                117
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                เกียรติบัตรที่อนุมัติแล้ว
+              </Typography>
+            </CardContent>
+          </Card>
+        </Box>
+
+        <Box flex={1}>
+          <Card>
+            <CardContent>
+              <Box display="flex" alignItems="center" mb={2}>
+                <Schedule color="info" sx={{ mr: 1 }} />
+                <Typography variant="h6">วันนี้</Typography>
+              </Box>
+              <Typography variant="h3" color="info.main">
+                12
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                คำขอใหม่วันนี้
+              </Typography>
+            </CardContent>
+          </Card>
+        </Box>
+      </Box>
+
+      <Box display="flex" flexDirection={{ xs: 'column', lg: 'row' }} gap={3}>
+        <Box flex={2}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                คำขอที่รอการอนุมัติ
+              </Typography>
+              <List>
+                <ListItem>
+                  <ListItemIcon>
+                    <Assignment />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary="เกียรติบัตรการเข้าร่วมโครงการ ABC"
+                    secondary="นักศึกษา: สมชาย ใจดี - ยื่นเมื่อ 2 ชั่วโมงที่แล้ว"
+                  />
+                  <Box>
+                    <Button size="small" color="success" sx={{ mr: 1 }}>
+                      อนุมัติ
+                    </Button>
+                    <Button size="small" color="error">
+                      ปฏิเสธ
+                    </Button>
+                  </Box>
+                </ListItem>
+                <ListItem>
+                  <ListItemIcon>
+                    <Assignment />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary="เกียรติบัตรการแข่งขันตอบปัญหา"
+                    secondary="นักศึกษา: สมหญิง รักเรียน - ยื่นเมื่อ 5 ชั่วโมงที่แล้ว"
+                  />
+                  <Box>
+                    <Button size="small" color="success" sx={{ mr: 1 }}>
+                      อนุมัติ
+                    </Button>
+                    <Button size="small" color="error">
+                      ปฏิเสธ
+                    </Button>
+                  </Box>
+                </ListItem>
+              </List>
+            </CardContent>
+          </Card>
+        </Box>
+
+        <Box flex={1}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                การดำเนินการด่วน
+              </Typography>
+              <Box display="flex" flexDirection="column" gap={2}>
+                <Button variant="contained" color="primary" fullWidth>
+                  สร้างเกียรติบัตรใหม่
+                </Button>
+                <Button variant="outlined" color="primary" fullWidth>
+                  จัดการเทมเพลต
+                </Button>
+                <Button variant="outlined" color="secondary" fullWidth>
+                  ดูรายงาน
+                </Button>
+              </Box>
+            </CardContent>
+          </Card>
+        </Box>
+      </Box>
+    </Box>
+  );
+
+  const renderAdminDashboard = () => (
+    <Box display="flex" flexDirection="column" gap={3}>
+      <Box>
+        <Typography variant="h4" gutterBottom>
+          แดชบอร์ดผู้ดูแลระบบ
+        </Typography>
+        <Typography variant="subtitle1" color="text.secondary" gutterBottom>
+          ภาพรวมระบบและการจัดการทั่วไป
+        </Typography>
+      </Box>
+
+      <Box display="flex" flexDirection={{ xs: 'column', md: 'row' }} gap={3}>
+        <Box flex={1}>
+          <Card>
+            <CardContent>
+              <Box display="flex" alignItems="center" mb={2}>
+                <Assignment color="primary" sx={{ mr: 1 }} />
+                <Typography variant="h6">ทั้งหมดเดือนนี้</Typography>
+              </Box>
+              <Typography variant="h3" color="primary">
+                1,247
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                เกียรติบัตรที่ออกในเดือนนี้
+              </Typography>
+            </CardContent>
+          </Card>
+        </Box>
+
+        <Box flex={1}>
+          <Card>
+            <CardContent>
+              <Box display="flex" alignItems="center" mb={2}>
+                <TrendingUp color="success" sx={{ mr: 1 }} />
+                <Typography variant="h6">เพิ่มขึ้น</Typography>
+              </Box>
+              <Typography variant="h3" color="success.main">
+                +15%
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                เทียบกับเดือนที่แล้ว
+              </Typography>
+            </CardContent>
+          </Card>
+        </Box>
+
+        <Box flex={1}>
+          <Card>
+            <CardContent>
+              <Box display="flex" alignItems="center" mb={2}>
+                <Schedule color="info" sx={{ mr: 1 }} />
+                <Typography variant="h6">ผู้ใช้งาน</Typography>
+              </Box>
+              <Typography variant="h3" color="info.main">
+                2,156
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                ผู้ใช้งานทั้งหมดในระบบ
+              </Typography>
+            </CardContent>
+          </Card>
+        </Box>
+
+        <Box flex={1}>
+          <Card>
+            <CardContent>
+              <Box display="flex" alignItems="center" mb={2}>
+                <CheckCircle color="warning" sx={{ mr: 1 }} />
+                <Typography variant="h6">เทมเพลต</Typography>
+              </Box>
+              <Typography variant="h3" color="warning.main">
+                24
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                เทมเพลตที่ใช้งานได้
+              </Typography>
+            </CardContent>
+          </Card>
+        </Box>
+      </Box>
+
+      <Box display="flex" flexDirection={{ xs: 'column', lg: 'row' }} gap={3}>
+        <Box flex={2}>
+          <Paper sx={{ p: 3 }}>
+            <Typography variant="h6" gutterBottom>
+              สถิติการใช้งานรายสัปดาห์
+            </Typography>
+            <Box height={300} display="flex" alignItems="center" justifyContent="center">
+              <Typography color="text.secondary">
+                [กราฟแสดงสถิติการใช้งาน]
+              </Typography>
+            </Box>
+          </Paper>
+        </Box>
+
+        <Box flex={1}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                การจัดการระบบ
+              </Typography>
+              <Box display="flex" flexDirection="column" gap={2}>
+                <Button variant="contained" color="primary" fullWidth>
+                  จัดการผู้ใช้งาน
+                </Button>
+                <Button variant="outlined" color="primary" fullWidth>
+                  ตั้งค่าระบบ
+                </Button>
+                <Button variant="outlined" color="secondary" fullWidth>
+                  สำรองข้อมูล
+                </Button>
+                <Button variant="outlined" color="warning" fullWidth>
+                  ดูบันทึกระบบ
+                </Button>
+              </Box>
+            </CardContent>
+          </Card>
+        </Box>
+      </Box>
+    </Box>
+  );
+
+  const renderDashboardContent = () => {
+    switch (user?.role) {
+      case 'student':
+        return renderStudentDashboard();
+      case 'staff':
+        return renderStaffDashboard();
+      case 'admin':
+        return renderAdminDashboard();
+      default:
+        return renderStudentDashboard();
+    }
+  };
+
+  return (
+    <DashboardLayout>
+      <Box p={3}>
+        {renderDashboardContent()}
+      </Box>
+    </DashboardLayout>
+  );
+};
+
+export default DashboardPage;
