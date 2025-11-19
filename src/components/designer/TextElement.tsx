@@ -12,6 +12,8 @@ interface TextElementProps {
   onDelete: (id: string) => void;
   onDoubleClick: (id: string) => void;
   onContextMenu: (id: string, x: number, y: number) => void;
+  gridSize?: number;
+  snapToGrid?: boolean;
 }
 
 export const TextElement: React.FC<TextElementProps> = ({
@@ -23,6 +25,8 @@ export const TextElement: React.FC<TextElementProps> = ({
   onDelete,
   onDoubleClick,
   onContextMenu,
+  gridSize = 20,
+  snapToGrid = true,
 }) => {
   const groupRef = useRef<Konva.Group>(null);
   const textRef = useRef<Konva.Text>(null);
@@ -43,33 +47,25 @@ export const TextElement: React.FC<TextElementProps> = ({
     });
   };
 
-  const handleTransform = () => {
+  const handleTransformEnd = () => {
     const node = groupRef.current;
     if (!node) return;
 
     const scaleX = node.scaleX();
     const scaleY = node.scaleY();
 
-    // Update immediately during transform to prevent visual lag
-    onUpdate(element.id, {
-      width: Math.max(50, element.width * scaleX),
-      height: Math.max(20, element.height * scaleY),
-    });
-
-    // Reset scale to 1
-    node.scaleX(1);
-    node.scaleY(1);
-  };
-
-  const handleTransformEnd = () => {
-    const node = groupRef.current;
-    if (!node) return;
-
+    // Update final dimensions and position
     onUpdate(element.id, {
       x: node.x(),
       y: node.y(),
+      width: Math.max(50, element.width * scaleX),
+      height: Math.max(20, element.height * scaleY),
       rotation: node.rotation(),
     });
+
+    // Reset scale to 1 after update
+    node.scaleX(1);
+    node.scaleY(1);
   };
 
   const displayText = element.displayText || element.content || element.properties?.placeholder || 'Text';
@@ -89,7 +85,6 @@ export const TextElement: React.FC<TextElementProps> = ({
         onDblClick={() => !isPreviewMode && onDoubleClick(element.id)}
         onDblTap={() => !isPreviewMode && onDoubleClick(element.id)}
         onDragEnd={handleDragEnd}
-        onTransform={handleTransform}
         onTransformEnd={handleTransformEnd}
         onContextMenu={(e) => {
           if (!isPreviewMode) {

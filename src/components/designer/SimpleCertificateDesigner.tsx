@@ -123,6 +123,8 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
   const [showLayerPanel, setShowLayerPanel] = useState(true);
   const [canvasZoom, setCanvasZoom] = useState(1);
   const [showGrid, setShowGrid] = useState(true);
+  const [gridSize] = useState(20); // Grid size in pixels
+  const [snapToGrid] = useState(true); // Enable snap to grid
   const [contextMenu, setContextMenu] = useState<{
     elementId: string;
     mouseX: number;
@@ -3350,21 +3352,21 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
                 {/* Grid (design mode only) */}
                 {!isPreviewMode && showGrid && (
                   <>
-                    {Array.from({ length: Math.floor(canvasWidth / 20) }, (_, i) => (
+                    {Array.from({ length: Math.floor(canvasWidth / gridSize) }, (_, i) => (
                       <Rect
                         key={`grid-v-${i}`}
-                        x={i * 20}
+                        x={i * gridSize}
                         y={0}
                         width={1}
                         height={canvasHeight}
                         fill="#e0e0e0"
                       />
                     ))}
-                    {Array.from({ length: Math.floor(canvasHeight / 20) }, (_, i) => (
+                    {Array.from({ length: Math.floor(canvasHeight / gridSize) }, (_, i) => (
                       <Rect
                         key={`grid-h-${i}`}
                         x={0}
-                        y={i * 20}
+                        y={i * gridSize}
                         width={canvasWidth}
                         height={1}
                         fill="#e0e0e0"
@@ -3401,6 +3403,8 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
                         }}
                         onDoubleClick={handleTextDoubleClick}
                         onContextMenu={handleContextMenu}
+                        gridSize={gridSize}
+                        snapToGrid={snapToGrid}
                       />
                     );
                   } else {
