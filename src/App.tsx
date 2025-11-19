@@ -29,6 +29,7 @@ import SystemStatusPage from './pages/SystemStatusPage';
 import TemplateListPage from './pages/TemplateListPage';
 import TemplateCreatePage from './pages/TemplateCreatePage';
 import TemplateDetailPage from './pages/TemplateDetailPage';
+import TemplateDesignerPage from './pages/TemplateDesignerPage';
 import UnauthorizedPage from './pages/UnauthorizedPage';
 import ActivityListPage from './pages/ActivityListPage';
 import ActivityCreatePage from './pages/ActivityCreatePage';
@@ -221,7 +222,7 @@ function App() {
               path="/templates/create"
               element={
                 <ProtectedRoute allowedRoles={['staff', 'admin']}>
-                  <TemplateCreatePage />
+                  <TemplateDesignerPage />
                 </ProtectedRoute>
               }
             />
@@ -237,7 +238,7 @@ function App() {
               path="/templates/:id/edit"
               element={
                 <ProtectedRoute allowedRoles={['staff', 'admin']}>
-                  <DesignerPage />
+                  <TemplateDesignerPage />
                 </ProtectedRoute>
               }
             />

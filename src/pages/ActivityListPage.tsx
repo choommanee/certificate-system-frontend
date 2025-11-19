@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Paper,
@@ -26,6 +26,7 @@ import {
   Tooltip,
   Avatar,
   LinearProgress,
+  Snackbar,
 } from '@mui/material';
 import {
   Add,
@@ -44,119 +45,81 @@ import {
   Schedule,
   Cancel,
 } from '@mui/icons-material';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
-
-interface Activity {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  status: 'draft' | 'active' | 'completed' | 'cancelled';
-  startDate: string;
-  endDate: string;
-  location: string;
-  maxParticipants: number;
-  currentParticipants: number;
-  certificateTemplate: string;
-  organizer: {
-    id: string;
-    name: string;
-    avatar?: string;
-  };
-  createdAt: string;
-  updatedAt: string;
-}
+import { activityService } from '../services/api';
+import type { Activity } from '../services/api/types';
 
 const ActivityListPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
   const [deleteDialog, setDeleteDialog] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
+  const itemsPerPage = 9;
 
-  // Mock data
-  const mockActivities: Activity[] = [
-    {
-      id: '1',
-      name: 'สัมมนาเศรษฐกิจดิจิทัล 2024',
-      description: 'การสัมมนาเกี่ยวกับแนวโน้มเศรษฐกิจดิจิทัลและผลกระทบต่อสังคมไทย',
-      category: 'สัมมนา',
-      status: 'active',
-      startDate: '2024-03-15',
-      endDate: '2024-03-16',
-      location: 'หอประชุมใหญ่ คณะเศรษฐศาสตร์',
-      maxParticipants: 200,
-      currentParticipants: 156,
-      certificateTemplate: 'เทมเพลตสัมมนา A',
-      organizer: {
-        id: '1',
-        name: 'ดร.สมชาย ใจดี',
-        avatar: null
-      },
-      createdAt: '2024-01-15T10:00:00Z',
-      updatedAt: '2024-02-20T14:30:00Z'
-    },
-    {
-      id: '2',
-      name: 'หลักสูตรการวิเคราะห์ข้อมูลทางเศรษฐกิจ',
-      description: 'หลักสูตรเข้มข้น 5 วัน เรียนรู้การใช้เครื่องมือวิเคราะห์ข้อมูลสำหรับนักเศรษฐศาสตร์',
-      category: 'หลักสูตร',
-      status: 'completed',
-      startDate: '2024-02-01',
-      endDate: '2024-02-05',
-      location: 'ห้องปฏิบัติการคอมพิวเตอร์ 301',
-      maxParticipants: 30,
-      currentParticipants: 28,
-      certificateTemplate: 'เทมเพลตหลักสูตร B',
-      organizer: {
-        id: '2',
-        name: 'อ.สมหญิง รักงาน',
-        avatar: null
-      },
-      createdAt: '2024-01-10T09:00:00Z',
-      updatedAt: '2024-02-06T16:00:00Z'
-    },
-    {
-      id: '3',
-      name: 'การแข่งขันแผนธุรกิจนักศึกษา',
-      description: 'การแข่งขันนำเสนอแผนธุรกิจสำหรับนักศึกษาระดับปริญญาตรี',
-      category: 'การแข่งขัน',
-      status: 'draft',
-      startDate: '2024-04-10',
-      endDate: '2024-04-12',
-      location: 'อาคารเรียนรวม ชั้น 5',
-      maxParticipants: 50,
-      currentParticipants: 0,
-      certificateTemplate: 'เทมเพลตการแข่งขัน C',
-      organizer: {
-        id: '3',
-        name: 'ผศ.บุญชู ขยัน',
-        avatar: null
-      },
-      createdAt: '2024-02-25T11:00:00Z',
-      updatedAt: '2024-02-25T11:00:00Z'
-    }
-  ];
+  // ฟังก์ชันดึงข้อมูลกิจกรรมจาก API
+  const fetchActivities = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError('');
 
-  useEffect(() => {
-    // Simulate API call
-    setTimeout(() => {
-      setActivities(mockActivities);
-      setTotalPages(Math.ceil(mockActivities.length / 10));
+      const response = await activityService.getActivities({
+        page: currentPage,
+        limit: itemsPerPage,
+        search: searchTerm || undefined,
+        status: statusFilter !== 'all' ? statusFilter : undefined,
+        sortBy: 'createdAt',
+        sortOrder: 'desc',
+      });
+
+      if (response.success && response.data) {
+        // ✅ API ส่ง {data: [...], pagination: {totalItems, totalPages}}
+        setActivities(response.data.data || []);
+        setTotalCount(response.data.pagination?.totalItems || 0);
+        setTotalPages(response.data.pagination?.totalPages || 1);
+      } else {
+        setError(response.message || 'เกิดข้อผิดพลาดในการดึงข้อมูล');
+      }
+    } catch (err: any) {
+      console.error('Error fetching activities:', err);
+      setError(err.response?.data?.message || err.message || 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้');
+      setActivities([]);
+    } finally {
       setLoading(false);
-    }, 1000);
-  }, []);
+    }
+  }, [currentPage, searchTerm, statusFilter]);
+
+  // โหลดข้อมูลครั้งแรกและเมื่อมีการเปลี่ยนแปลง filter
+  useEffect(() => {
+    fetchActivities();
+  }, [fetchActivities]);
+
+  // แสดง success message ถ้ามีการส่งมาจากหน้าอื่น
+  useEffect(() => {
+    if (location.state?.message) {
+      setSnackbar({ open: true, message: location.state.message, severity: 'success' });
+      // Clear the message from location state
+      window.history.replaceState({}, document.title);
+    }
+  }, [location]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'active': return 'success';
+      case 'published':
+      case 'ongoing':
+        return 'success';
       case 'completed': return 'primary';
       case 'draft': return 'warning';
       case 'cancelled': return 'error';
@@ -166,7 +129,8 @@ const ActivityListPage: React.FC = () => {
 
   const getStatusText = (status: string) => {
     switch (status) {
-      case 'active': return 'กำลังดำเนินการ';
+      case 'published': return 'เผยแพร่แล้ว';
+      case 'ongoing': return 'กำลังดำเนินการ';
       case 'completed': return 'เสร็จสิ้น';
       case 'draft': return 'ร่าง';
       case 'cancelled': return 'ยกเลิก';
@@ -176,7 +140,9 @@ const ActivityListPage: React.FC = () => {
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'active': return <CheckCircle />;
+      case 'published':
+      case 'ongoing':
+        return <CheckCircle />;
       case 'completed': return <Assignment />;
       case 'draft': return <Schedule />;
       case 'cancelled': return <Cancel />;
@@ -194,22 +160,55 @@ const ActivityListPage: React.FC = () => {
     setSelectedActivity(null);
   };
 
-  const handleDelete = () => {
-    if (selectedActivity) {
-      setActivities(prev => prev.filter(a => a.id !== selectedActivity.id));
-      setDeleteDialog(false);
-      handleMenuClose();
+  const handleDelete = async () => {
+    if (!selectedActivity) return;
+
+    try {
+      setDeleteLoading(true);
+      const response = await activityService.deleteActivity(selectedActivity.id);
+
+      if (response.success) {
+        setSnackbar({ open: true, message: 'ลบกิจกรรมสำเร็จ', severity: 'success' });
+        setDeleteDialog(false);
+        handleMenuClose();
+        // Refresh the list
+        fetchActivities();
+      } else {
+        setSnackbar({ open: true, message: response.message || 'ไม่สามารถลบกิจกรรมได้', severity: 'error' });
+      }
+    } catch (err: any) {
+      console.error('Error deleting activity:', err);
+      setSnackbar({
+        open: true,
+        message: err.response?.data?.message || err.message || 'เกิดข้อผิดพลาดในการลบกิจกรรม',
+        severity: 'error'
+      });
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
-  const filteredActivities = activities.filter(activity => {
-    const matchesSearch = activity.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         activity.description.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || activity.status === statusFilter;
-    const matchesCategory = categoryFilter === 'all' || activity.category === categoryFilter;
-    
-    return matchesSearch && matchesStatus && matchesCategory;
-  });
+  // Handle search with debounce
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value);
+    setCurrentPage(1); // Reset to first page when searching
+  };
+
+  // Handle filter changes
+  const handleStatusFilterChange = (value: string) => {
+    setStatusFilter(value);
+    setCurrentPage(1); // Reset to first page when filtering
+  };
+
+  const handleCategoryFilterChange = (value: string) => {
+    setCategoryFilter(value);
+    setCurrentPage(1); // Reset to first page when filtering
+  };
+
+  // Client-side category filter (since API might not support it)
+  const filteredActivities = categoryFilter === 'all'
+    ? activities
+    : activities.filter(activity => activity.activityType === categoryFilter);
 
   const categories = ['สัมมนา', 'หลักสูตร', 'การแข่งขัน', 'ประชุม', 'อบรม'];
 
@@ -257,7 +256,7 @@ const ActivityListPage: React.FC = () => {
                 fullWidth
                 placeholder="ค้นหากิจกรรม..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start">
@@ -274,13 +273,14 @@ const ActivityListPage: React.FC = () => {
                 <Select
                   value={statusFilter}
                   label="สถานะ"
-                  onChange={(e) => setStatusFilter(e.target.value)}
+                  onChange={(e) => handleStatusFilterChange(e.target.value)}
                   sx={{ borderRadius: 2 }}
                 >
                   <MenuItem value="all">ทุกสถานะ</MenuItem>
-                  <MenuItem value="active">กำลังดำเนินการ</MenuItem>
-                  <MenuItem value="completed">เสร็จสิ้น</MenuItem>
                   <MenuItem value="draft">ร่าง</MenuItem>
+                  <MenuItem value="published">เผยแพร่แล้ว</MenuItem>
+                  <MenuItem value="ongoing">กำลังดำเนินการ</MenuItem>
+                  <MenuItem value="completed">เสร็จสิ้น</MenuItem>
                   <MenuItem value="cancelled">ยกเลิก</MenuItem>
                 </Select>
               </FormControl>
@@ -291,7 +291,7 @@ const ActivityListPage: React.FC = () => {
                 <Select
                   value={categoryFilter}
                   label="หมวดหมู่"
-                  onChange={(e) => setCategoryFilter(e.target.value)}
+                  onChange={(e) => handleCategoryFilterChange(e.target.value)}
                   sx={{ borderRadius: 2 }}
                 >
                   <MenuItem value="all">ทุกหมวดหมู่</MenuItem>
@@ -302,17 +302,26 @@ const ActivityListPage: React.FC = () => {
               </FormControl>
             </Grid>
             <Grid item xs={12} md={2}>
-              <Button
-                fullWidth
-                variant="outlined"
-                startIcon={<FilterList />}
-                sx={{ py: 1.5, borderRadius: 2 }}
-              >
-                ตัวกรอง
-              </Button>
+              <Tooltip title="จำนวนทั้งหมด">
+                <Box sx={{ textAlign: 'center', p: 1.5, border: '1px solid #e0e0e0', borderRadius: 2 }}>
+                  <Typography variant="h6" color="primary" sx={{ fontWeight: 600 }}>
+                    {totalCount}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    กิจกรรม
+                  </Typography>
+                </Box>
+              </Tooltip>
             </Grid>
           </Grid>
         </Paper>
+
+        {/* Error Alert */}
+        {error && (
+          <Alert severity="error" sx={{ mb: 4, borderRadius: 2 }} onClose={() => setError('')}>
+            {error}
+          </Alert>
+        )}
 
         {/* Activities Grid */}
         {loading ? (
@@ -362,9 +371,9 @@ const ActivityListPage: React.FC = () => {
 
                       {/* Description */}
                       <Typography variant="body2" color="text.secondary" sx={{ mb: 3, minHeight: 40 }}>
-                        {activity.description.length > 100 
-                          ? `${activity.description.substring(0, 100)}...` 
-                          : activity.description}
+                        {activity.description && activity.description.length > 100
+                          ? `${activity.description.substring(0, 100)}...`
+                          : activity.description || 'ไม่มีคำอธิบาย'}
                       </Typography>
 
                       {/* Details */}
@@ -375,46 +384,60 @@ const ActivityListPage: React.FC = () => {
                             {new Date(activity.startDate).toLocaleDateString('th-TH')} - {new Date(activity.endDate).toLocaleDateString('th-TH')}
                           </Typography>
                         </Box>
+                        {activity.location && (
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <LocationOn sx={{ fontSize: 16, color: 'text.secondary' }} />
+                            <Typography variant="caption" color="text.secondary">
+                              {activity.location}
+                            </Typography>
+                          </Box>
+                        )}
+                        {activity.maxParticipants && (
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <People sx={{ fontSize: 16, color: 'text.secondary' }} />
+                            <Typography variant="caption" color="text.secondary">
+                              {activity.participantCount || 0}/{activity.maxParticipants} คน
+                            </Typography>
+                          </Box>
+                        )}
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <LocationOn sx={{ fontSize: 16, color: 'text.secondary' }} />
+                          <Assignment sx={{ fontSize: 16, color: 'text.secondary' }} />
                           <Typography variant="caption" color="text.secondary">
-                            {activity.location}
-                          </Typography>
-                        </Box>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <People sx={{ fontSize: 16, color: 'text.secondary' }} />
-                          <Typography variant="caption" color="text.secondary">
-                            {activity.currentParticipants}/{activity.maxParticipants} คน
+                            เกียรติบัตร: {activity.certificateCount || 0} ใบ
                           </Typography>
                         </Box>
                       </Box>
 
                       {/* Progress */}
-                      <Box sx={{ mb: 2 }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                          <Typography variant="caption" color="text.secondary">
-                            ผู้เข้าร่วม
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {Math.round((activity.currentParticipants / activity.maxParticipants) * 100)}%
-                          </Typography>
+                      {activity.maxParticipants && activity.maxParticipants > 0 && (
+                        <Box sx={{ mb: 2 }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                            <Typography variant="caption" color="text.secondary">
+                              ผู้เข้าร่วม
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {Math.round(((activity.participantCount || 0) / activity.maxParticipants) * 100)}%
+                            </Typography>
+                          </Box>
+                          <LinearProgress
+                            variant="determinate"
+                            value={((activity.participantCount || 0) / activity.maxParticipants) * 100}
+                            sx={{ borderRadius: 1, height: 6 }}
+                          />
                         </Box>
-                        <LinearProgress 
-                          variant="determinate" 
-                          value={(activity.currentParticipants / activity.maxParticipants) * 100}
-                          sx={{ borderRadius: 1, height: 6 }}
-                        />
-                      </Box>
+                      )}
 
                       {/* Organizer */}
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Avatar sx={{ width: 24, height: 24, fontSize: 12 }}>
-                          {activity.organizer.name.charAt(0)}
-                        </Avatar>
-                        <Typography variant="caption" color="text.secondary">
-                          {activity.organizer.name}
-                        </Typography>
-                      </Box>
+                      {activity.organizer && (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Avatar sx={{ width: 24, height: 24, fontSize: 12 }}>
+                            {activity.organizer.charAt(0)}
+                          </Avatar>
+                          <Typography variant="caption" color="text.secondary">
+                            {activity.organizer}
+                          </Typography>
+                        </Box>
+                      )}
                     </CardContent>
 
                     <CardActions sx={{ p: 2, pt: 0 }}>
@@ -479,7 +502,7 @@ const ActivityListPage: React.FC = () => {
         </Menu>
 
         {/* Delete Confirmation Dialog */}
-        <Dialog open={deleteDialog} onClose={() => setDeleteDialog(false)}>
+        <Dialog open={deleteDialog} onClose={() => !deleteLoading && setDeleteDialog(false)}>
           <DialogTitle>ยืนยันการลบกิจกรรม</DialogTitle>
           <DialogContent>
             <Typography>
@@ -488,12 +511,35 @@ const ActivityListPage: React.FC = () => {
             </Typography>
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setDeleteDialog(false)}>ยกเลิก</Button>
-            <Button onClick={handleDelete} color="error" variant="contained">
-              ลบ
+            <Button onClick={() => setDeleteDialog(false)} disabled={deleteLoading}>
+              ยกเลิก
+            </Button>
+            <Button
+              onClick={handleDelete}
+              color="error"
+              variant="contained"
+              disabled={deleteLoading}
+            >
+              {deleteLoading ? 'กำลังลบ...' : 'ลบ'}
             </Button>
           </DialogActions>
         </Dialog>
+
+        {/* Success/Error Snackbar */}
+        <Snackbar
+          open={snackbar.open}
+          autoHideDuration={6000}
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
+          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        >
+          <Alert
+            onClose={() => setSnackbar({ ...snackbar, open: false })}
+            severity={snackbar.severity}
+            sx={{ width: '100%' }}
+          >
+            {snackbar.message}
+          </Alert>
+        </Snackbar>
       </Box>
     </DashboardLayout>
   );

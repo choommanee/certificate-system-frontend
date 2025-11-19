@@ -22,6 +22,8 @@ import {
   Autocomplete,
   Slider,
   Divider,
+  LinearProgress,
+  Snackbar,
 } from '@mui/material';
 import {
   ArrowBack,
@@ -32,42 +34,31 @@ import {
   Palette,
   Settings,
   CloudUpload,
+  Image,
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
+import { templateService } from '../services/api/templateService';
+import type { TemplateCreateRequest } from '../services/api/types';
 
 interface TemplateForm {
   name: string;
   description: string;
   category: string;
-  tags: string[];
-  is_public: boolean;
-  canvas: {
-    width: number;
-    height: number;
-    background_color: string;
-    background_image?: string;
-  };
-  elements: TemplateElement[];
-  variables: TemplateVariable[];
+  width: number;
+  height: number;
+  orientation: 'portrait' | 'landscape';
+  backgroundColor: string;
+  backgroundImageUrl?: string;
+  isPublic: boolean;
 }
 
-interface TemplateElement {
-  id: string;
-  type: 'text' | 'image' | 'shape' | 'qr_code';
-  position: { x: number; y: number };
-  size: { width: number; height: number };
-  style: any;
-  content: any;
-}
-
-interface TemplateVariable {
-  name: string;
-  type: 'text' | 'date' | 'number';
-  default_value: string;
-  required: boolean;
-  description: string;
+interface BackgroundUpload {
+  file: File | null;
+  preview: string;
+  uploading: boolean;
+  uploadProgress: number;
 }
 
 const steps = ['ข้อมูลพื้นฐาน', 'การตั้งค่าผืนผ้าใบ', 'ออกแบบเทมเพลต', 'ตัวแปรและการตั้งค่า'];
@@ -78,30 +69,34 @@ const TemplateCreatePage: React.FC = () => {
   const [activeStep, setActiveStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
+  const [successMessage, setSuccessMessage] = useState<string>('');
 
   const [form, setForm] = useState<TemplateForm>({
     name: '',
     description: '',
     category: '',
-    tags: [],
-    is_public: false,
-    canvas: {
-      width: 1920,
-      height: 1080,
-      background_color: '#ffffff',
-    },
-    elements: [],
-    variables: []
+    width: 1920,
+    height: 1080,
+    orientation: 'landscape',
+    backgroundColor: '#ffffff',
+    backgroundImageUrl: '',
+    isPublic: false,
+  });
+
+  const [backgroundUpload, setBackgroundUpload] = useState<BackgroundUpload>({
+    file: null,
+    preview: '',
+    uploading: false,
+    uploadProgress: 0,
   });
 
   const categories = ['สัมมนา', 'ฝึกอบรม', 'การแข่งขัน', 'การศึกษา', 'อื่นๆ'];
-  const commonTags = ['พื้นฐาน', 'ขั้นสูง', 'ทั่วไป', 'เชิงลึก', 'นักศึกษา', 'มหาวิทยาลัย', 'ปริญญา'];
   const canvasSizes = [
-    { name: 'A4 แนวนอน', width: 1920, height: 1080 },
-    { name: 'A4 แนวตั้ง', width: 1080, height: 1920 },
-    { name: 'Letter แนวนอน', width: 1800, height: 1200 },
-    { name: 'Letter แนวตั้ง', width: 1200, height: 1800 },
-    { name: 'กำหนดเอง', width: 0, height: 0 }
+    { name: 'A4 แนวนอน', width: 1920, height: 1080, orientation: 'landscape' as const },
+    { name: 'A4 แนวตั้ง', width: 1080, height: 1920, orientation: 'portrait' as const },
+    { name: 'Letter แนวนอน', width: 1800, height: 1200, orientation: 'landscape' as const },
+    { name: 'Letter แนวตั้ง', width: 1200, height: 1800, orientation: 'portrait' as const },
+    { name: 'กำหนดเอง', width: 0, height: 0, orientation: 'landscape' as const }
   ];
 
   const handleNext = () => {
@@ -117,14 +112,22 @@ const TemplateCreatePage: React.FC = () => {
   const validateStep = (step: number): boolean => {
     switch (step) {
       case 0:
-        if (!form.name || !form.description || !form.category) {
-          setError('กรุณากรอกข้อมูลให้ครบถ้วน');
+        if (!form.name || !form.category) {
+          setError('กรุณากรอกชื่อเทมเพลตและหมวดหมู่');
+          return false;
+        }
+        if (form.name.length < 3) {
+          setError('ชื่อเทมเพลตต้องมีอย่างน้อย 3 ตัวอักษร');
           return false;
         }
         break;
       case 1:
-        if (form.canvas.width <= 0 || form.canvas.height <= 0) {
-          setError('กรุณาตั้งค่าขนาดผืนผ้าใบ');
+        if (form.width <= 0 || form.height <= 0) {
+          setError('กรุณาตั้งค่าขนาดผืนผ้าใบให้ถูกต้อง');
+          return false;
+        }
+        if (form.width < 100 || form.height < 100) {
+          setError('ขนาดผืนผ้าใบต้องมีอย่างน้อย 100px');
           return false;
         }
         break;
@@ -134,21 +137,10 @@ const TemplateCreatePage: React.FC = () => {
   };
 
   const handleFormChange = (field: string, value: any) => {
-    if (field.startsWith('canvas.')) {
-      const canvasField = field.replace('canvas.', '');
-      setForm(prev => ({
-        ...prev,
-        canvas: {
-          ...prev.canvas,
-          [canvasField]: value
-        }
-      }));
-    } else {
-      setForm(prev => ({
-        ...prev,
-        [field]: value
-      }));
-    }
+    setForm(prev => ({
+      ...prev,
+      [field]: value
+    }));
   };
 
   const handleCanvasSizeChange = (size: any) => {
@@ -158,58 +150,102 @@ const TemplateCreatePage: React.FC = () => {
     }
     setForm(prev => ({
       ...prev,
-      canvas: {
-        ...prev.canvas,
-        width: size.width,
-        height: size.height
-      }
+      width: size.width,
+      height: size.height,
+      orientation: size.orientation
     }));
   };
 
-  const addVariable = () => {
-    const newVariable: TemplateVariable = {
-      name: `variable_${form.variables.length + 1}`,
-      type: 'text',
-      default_value: '',
-      required: false,
-      description: ''
+  const handleBackgroundFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      setError('กรุณาเลือกไฟล์รูปภาพเท่านั้น');
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setError('ขนาดไฟล์ต้องไม่เกิน 5MB');
+      return;
+    }
+
+    // Create preview
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setBackgroundUpload(prev => ({
+        ...prev,
+        file,
+        preview: reader.result as string
+      }));
     };
-    setForm(prev => ({
-      ...prev,
-      variables: [...prev.variables, newVariable]
-    }));
-  };
+    reader.readAsDataURL(file);
 
-  const updateVariable = (index: number, field: string, value: any) => {
-    setForm(prev => ({
-      ...prev,
-      variables: prev.variables.map((variable, i) => 
-        i === index ? { ...variable, [field]: value } : variable
-      )
-    }));
-  };
+    // Upload to server
+    try {
+      setBackgroundUpload(prev => ({ ...prev, uploading: true, uploadProgress: 0 }));
 
-  const removeVariable = (index: number) => {
-    setForm(prev => ({
-      ...prev,
-      variables: prev.variables.filter((_, i) => i !== index)
-    }));
+      const response = await templateService.uploadBackground(
+        file,
+        (progress) => {
+          setBackgroundUpload(prev => ({ ...prev, uploadProgress: progress }));
+        }
+      );
+
+      if (response.success && response.data) {
+        setForm(prev => ({
+          ...prev,
+          backgroundImageUrl: response.data.url
+        }));
+        setSuccessMessage('อัปโหลดรูปพื้นหลังสำเร็จ');
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'เกิดข้อผิดพลาดในการอัปโหลดรูปภาพ');
+      setBackgroundUpload({
+        file: null,
+        preview: '',
+        uploading: false,
+        uploadProgress: 0
+      });
+    } finally {
+      setBackgroundUpload(prev => ({ ...prev, uploading: false }));
+    }
   };
 
   const handleSubmit = async () => {
+    if (!validateStep(0) || !validateStep(1)) {
+      return;
+    }
+
     setLoading(true);
+    setError('');
+
     try {
-      // TODO: Submit to API
-      console.log('Creating template:', form);
-      
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      navigate('/templates', { 
-        state: { message: 'สร้างเทมเพลตสำเร็จ' }
-      });
+      const templateData: TemplateCreateRequest = {
+        name: form.name,
+        description: form.description,
+        category: form.category,
+        width: form.width,
+        height: form.height,
+        orientation: form.orientation,
+        backgroundColor: form.backgroundColor,
+        backgroundImageUrl: form.backgroundImageUrl,
+        isPublic: form.isPublic,
+        elements: [] // Empty for now, will be added in designer
+      };
+
+      const response = await templateService.createTemplate(templateData);
+
+      if (response.success && response.data) {
+        navigate('/templates', {
+          state: { message: 'สร้างเทมเพลตสำเร็จ' }
+        });
+      }
     } catch (err: any) {
-      setError(err.message);
+      console.error('Error creating template:', err);
+      setError(err.response?.data?.message || err.message || 'เกิดข้อผิดพลาดในการสร้างเทมเพลต');
     } finally {
       setLoading(false);
     }
@@ -265,32 +301,11 @@ const TemplateCreatePage: React.FC = () => {
                   <FormControlLabel
                     control={
                       <Switch
-                        checked={form.is_public}
-                        onChange={(e) => handleFormChange('is_public', e.target.checked)}
+                        checked={form.isPublic}
+                        onChange={(e) => handleFormChange('isPublic', e.target.checked)}
                       />
                     }
                     label="เผยแพร่สาธารณะ"
-                  />
-                </Grid>
-                <Grid item xs={12}>
-                  <Autocomplete
-                    multiple
-                    options={commonTags}
-                    freeSolo
-                    value={form.tags}
-                    onChange={(_, newValue) => handleFormChange('tags', newValue)}
-                    renderTags={(value, getTagProps) =>
-                      value.map((option, index) => (
-                        <Chip variant="outlined" label={option} {...getTagProps({ index })} />
-                      ))
-                    }
-                    renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        label="แท็ก"
-                        placeholder="เพิ่มแท็กเพื่อช่วยในการค้นหา"
-                      />
-                    )}
                   />
                 </Grid>
               </Grid>
@@ -344,8 +359,8 @@ const TemplateCreatePage: React.FC = () => {
                     fullWidth
                     type="number"
                     label="ความกว้าง (px)"
-                    value={form.canvas.width}
-                    onChange={(e) => handleFormChange('canvas.width', parseInt(e.target.value))}
+                    value={form.width}
+                    onChange={(e) => handleFormChange('width', parseInt(e.target.value))}
                     inputProps={{ min: 100, max: 5000 }}
                   />
                 </Grid>
@@ -354,8 +369,8 @@ const TemplateCreatePage: React.FC = () => {
                     fullWidth
                     type="number"
                     label="ความสูง (px)"
-                    value={form.canvas.height}
-                    onChange={(e) => handleFormChange('canvas.height', parseInt(e.target.value))}
+                    value={form.height}
+                    onChange={(e) => handleFormChange('height', parseInt(e.target.value))}
                     inputProps={{ min: 100, max: 5000 }}
                   />
                 </Grid>
@@ -367,35 +382,100 @@ const TemplateCreatePage: React.FC = () => {
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                     <input
                       type="color"
-                      value={form.canvas.background_color}
-                      onChange={(e) => handleFormChange('canvas.background_color', e.target.value)}
+                      value={form.backgroundColor}
+                      onChange={(e) => handleFormChange('backgroundColor', e.target.value)}
                       style={{ width: 50, height: 50, border: 'none', borderRadius: 4 }}
                     />
                     <TextField
                       label="รหัสสี"
-                      value={form.canvas.background_color}
-                      onChange={(e) => handleFormChange('canvas.background_color', e.target.value)}
+                      value={form.backgroundColor}
+                      onChange={(e) => handleFormChange('backgroundColor', e.target.value)}
                       sx={{ width: 120 }}
                     />
                   </Box>
                 </Grid>
 
                 <Grid item xs={12}>
+                  <Typography variant="subtitle1" gutterBottom>
+                    รูปภาพพื้นหลัง
+                  </Typography>
+                  <Paper
+                    sx={{
+                      p: 3,
+                      border: '2px dashed',
+                      borderColor: 'grey.300',
+                      textAlign: 'center',
+                      cursor: 'pointer',
+                      '&:hover': {
+                        borderColor: 'primary.main',
+                        bgcolor: 'grey.50'
+                      }
+                    }}
+                    onClick={() => document.getElementById('background-upload')?.click()}
+                  >
+                    <input
+                      id="background-upload"
+                      type="file"
+                      accept="image/*"
+                      style={{ display: 'none' }}
+                      onChange={handleBackgroundFileChange}
+                    />
+                    {backgroundUpload.uploading ? (
+                      <Box>
+                        <Typography variant="body2" gutterBottom>
+                          กำลังอัปโหลด... {backgroundUpload.uploadProgress}%
+                        </Typography>
+                        <LinearProgress variant="determinate" value={backgroundUpload.uploadProgress} />
+                      </Box>
+                    ) : backgroundUpload.preview || form.backgroundImageUrl ? (
+                      <Box>
+                        <Box
+                          component="img"
+                          src={backgroundUpload.preview || form.backgroundImageUrl}
+                          sx={{ maxWidth: '100%', maxHeight: 200, mb: 1 }}
+                        />
+                        <Typography variant="body2" color="text.secondary">
+                          คลิกเพื่อเปลี่ยนรูปภาพ
+                        </Typography>
+                      </Box>
+                    ) : (
+                      <Box>
+                        <CloudUpload sx={{ fontSize: 48, color: 'text.secondary', mb: 1 }} />
+                        <Typography variant="body1" gutterBottom>
+                          คลิกเพื่ออัปโหลดรูปภาพพื้นหลัง
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          รองรับไฟล์ JPG, PNG (ไม่เกิน 5MB)
+                        </Typography>
+                      </Box>
+                    )}
+                  </Paper>
+                </Grid>
+
+                <Grid item xs={12}>
+                  <Typography variant="subtitle1" gutterBottom>
+                    ตัวอย่างผืนผ้าใบ
+                  </Typography>
                   <Paper
                     sx={{
                       width: '100%',
                       height: 200,
-                      bgcolor: form.canvas.background_color,
+                      bgcolor: form.backgroundColor,
                       border: '1px solid',
                       borderColor: 'divider',
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'center'
+                      justifyContent: 'center',
+                      backgroundImage: form.backgroundImageUrl ? `url(${form.backgroundImageUrl})` : 'none',
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center'
                     }}
                   >
-                    <Typography variant="body2" color="text.secondary">
-                      ตัวอย่างผืนผ้าใบ ({form.canvas.width} x {form.canvas.height})
-                    </Typography>
+                    {!form.backgroundImageUrl && (
+                      <Typography variant="body2" color="text.secondary">
+                        ตัวอย่างผืนผ้าใบ ({form.width} x {form.height})
+                      </Typography>
+                    )}
                   </Paper>
                 </Grid>
               </Grid>
@@ -456,103 +536,13 @@ const TemplateCreatePage: React.FC = () => {
           <Card>
             <CardContent>
               <Typography variant="h6" gutterBottom>
-                ตัวแปรและการตั้งค่า
+                สรุปและยืนยัน
               </Typography>
-              
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="subtitle1">
-                  ตัวแปรในเทมเพลต
-                </Typography>
-                <Button
-                  variant="outlined"
-                  startIcon={<CloudUpload />}
-                  onClick={addVariable}
-                >
-                  เพิ่มตัวแปร
-                </Button>
-              </Box>
 
-              {form.variables.length === 0 ? (
-                <Paper sx={{ p: 3, textAlign: 'center', bgcolor: 'grey.50' }}>
-                  <Typography variant="body2" color="text.secondary">
-                    ยังไม่มีตัวแปร คลิก "เพิ่มตัวแปร" เพื่อเพิ่มตัวแปรใหม่
-                  </Typography>
-                </Paper>
-              ) : (
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {form.variables.map((variable, index) => (
-                    <Paper key={index} sx={{ p: 2 }}>
-                      <Grid container spacing={2} alignItems="center">
-                        <Grid item xs={12} md={3}>
-                          <TextField
-                            fullWidth
-                            label="ชื่อตัวแปร"
-                            value={variable.name}
-                            onChange={(e) => updateVariable(index, 'name', e.target.value)}
-                            size="small"
-                          />
-                        </Grid>
-                        <Grid item xs={12} md={2}>
-                          <FormControl fullWidth size="small">
-                            <InputLabel>ประเภท</InputLabel>
-                            <Select
-                              value={variable.type}
-                              label="ประเภท"
-                              onChange={(e) => updateVariable(index, 'type', e.target.value)}
-                            >
-                              <MenuItem value="text">ข้อความ</MenuItem>
-                              <MenuItem value="date">วันที่</MenuItem>
-                              <MenuItem value="number">ตัวเลข</MenuItem>
-                            </Select>
-                          </FormControl>
-                        </Grid>
-                        <Grid item xs={12} md={2}>
-                          <TextField
-                            fullWidth
-                            label="ค่าเริ่มต้น"
-                            value={variable.default_value}
-                            onChange={(e) => updateVariable(index, 'default_value', e.target.value)}
-                            size="small"
-                          />
-                        </Grid>
-                        <Grid item xs={12} md={3}>
-                          <TextField
-                            fullWidth
-                            label="คำอธิบาย"
-                            value={variable.description}
-                            onChange={(e) => updateVariable(index, 'description', e.target.value)}
-                            size="small"
-                          />
-                        </Grid>
-                        <Grid item xs={12} md={1}>
-                          <FormControlLabel
-                            control={
-                              <Switch
-                                checked={variable.required}
-                                onChange={(e) => updateVariable(index, 'required', e.target.checked)}
-                                size="small"
-                              />
-                            }
-                            label="จำเป็น"
-                            labelPlacement="top"
-                          />
-                        </Grid>
-                        <Grid item xs={12} md={1}>
-                          <Button
-                            color="error"
-                            onClick={() => removeVariable(index)}
-                            size="small"
-                          >
-                            ลบ
-                          </Button>
-                        </Grid>
-                      </Grid>
-                    </Paper>
-                  ))}
-                </Box>
-              )}
-
-              <Divider sx={{ my: 3 }} />
+              <Alert severity="info" sx={{ mb: 3 }}>
+                คุณสามารถเพิ่มองค์ประกอบและตัวแปรต่างๆ ได้หลังจากสร้างเทมเพลตแล้ว
+                โดยใช้เครื่องมือออกแบบ
+              </Alert>
 
               <Typography variant="subtitle1" gutterBottom>
                 สรุปเทมเพลต
@@ -561,25 +551,58 @@ const TemplateCreatePage: React.FC = () => {
                 <Grid item xs={12} md={6}>
                   <Paper sx={{ p: 2 }}>
                     <Typography variant="body2" color="text.secondary">ชื่อเทมเพลต</Typography>
-                    <Typography variant="body1">{form.name}</Typography>
+                    <Typography variant="body1">{form.name || '-'}</Typography>
                   </Paper>
                 </Grid>
                 <Grid item xs={12} md={6}>
                   <Paper sx={{ p: 2 }}>
                     <Typography variant="body2" color="text.secondary">หมวดหมู่</Typography>
-                    <Typography variant="body1">{form.category}</Typography>
+                    <Typography variant="body1">{form.category || '-'}</Typography>
                   </Paper>
                 </Grid>
                 <Grid item xs={12} md={6}>
                   <Paper sx={{ p: 2 }}>
                     <Typography variant="body2" color="text.secondary">ขนาดผืนผ้าใบ</Typography>
-                    <Typography variant="body1">{form.canvas.width} x {form.canvas.height} px</Typography>
+                    <Typography variant="body1">{form.width} x {form.height} px ({form.orientation === 'landscape' ? 'แนวนอน' : 'แนวตั้ง'})</Typography>
                   </Paper>
                 </Grid>
                 <Grid item xs={12} md={6}>
                   <Paper sx={{ p: 2 }}>
-                    <Typography variant="body2" color="text.secondary">จำนวนตัวแปร</Typography>
-                    <Typography variant="body1">{form.variables.length} ตัวแปร</Typography>
+                    <Typography variant="body2" color="text.secondary">สถานะ</Typography>
+                    <Typography variant="body1">{form.isPublic ? 'สาธารณะ' : 'ส่วนตัว'}</Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={12}>
+                  <Paper sx={{ p: 2 }}>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>คำอธิบาย</Typography>
+                    <Typography variant="body1">{form.description || 'ไม่มีคำอธิบาย'}</Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={12}>
+                  <Paper sx={{ p: 2 }}>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>ตัวอย่างพื้นหลัง</Typography>
+                    <Box
+                      sx={{
+                        width: '100%',
+                        height: 200,
+                        bgcolor: form.backgroundColor,
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        borderRadius: 1,
+                        backgroundImage: form.backgroundImageUrl ? `url(${form.backgroundImageUrl})` : 'none',
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      {!form.backgroundImageUrl && (
+                        <Typography variant="body2" color="text.secondary">
+                          สีพื้นหลัง: {form.backgroundColor}
+                        </Typography>
+                      )}
+                    </Box>
                   </Paper>
                 </Grid>
               </Grid>
@@ -620,6 +643,18 @@ const TemplateCreatePage: React.FC = () => {
             {error}
           </Alert>
         )}
+
+        {/* Success Snackbar */}
+        <Snackbar
+          open={!!successMessage}
+          autoHideDuration={6000}
+          onClose={() => setSuccessMessage('')}
+          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        >
+          <Alert onClose={() => setSuccessMessage('')} severity="success" sx={{ width: '100%' }}>
+            {successMessage}
+          </Alert>
+        </Snackbar>
 
         {/* Stepper */}
         <Card sx={{ mb: 3 }}>

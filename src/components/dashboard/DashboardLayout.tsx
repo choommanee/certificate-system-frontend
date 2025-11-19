@@ -37,6 +37,7 @@ import {
   Analytics,
   Folder,
   CheckCircleOutline,
+  Add,
 } from '@mui/icons-material';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -184,6 +185,12 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
           description: 'จัดการเกียรติบัตรทั้งหมด'
         },
         {
+          text: 'สร้างเกียรติบัตร',
+          icon: <Add />,
+          path: '/certificates/generate',
+          description: 'สร้างเกียรติบัตรแบบ Step-by-Step'
+        },
+        {
           text: 'แม่แบบเกียรติบัตร',
           icon: <Description />,
           path: '/templates',
@@ -192,8 +199,14 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
         {
           text: 'ออกแบบเกียรติบัตร',
           icon: <Category />,
-          path: '/designer',
-          description: 'สร้างและแก้ไขเกียรติบัตร'
+          path: '/designer-test',
+          description: 'ออกแบบเกียรติบัตรด้วย Designer'
+        },
+        {
+          text: 'Hybrid Designer',
+          icon: <Category />,
+          path: '/hybrid-designer-test',
+          description: 'ทดสอบ Hybrid Designer (Konva + Fabric)'
         },
         {
           text: 'การดำเนินการแบบกลุ่ม',
@@ -244,20 +257,32 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
           path: '/certificates',
           description: 'จัดการเกียรติบัตรทั้งหมด'
         },
-        { 
-          text: 'แม่แบบเกียรติบัตร', 
+        {
+          text: 'สร้างเกียรติบัตร',
+          icon: <Add />,
+          path: '/certificates/generate',
+          description: 'สร้างเกียรติบัตรแบบ Step-by-Step'
+        },
+        {
+          text: 'แม่แบบเกียรติบัตร',
           icon: <Description />, 
           path: '/templates',
           description: 'จัดการเทมเพลต'
         },
-        { 
-          text: 'ออกแบบเกียรติบัตร', 
-          icon: <Category />, 
-          path: '/designer',
-          description: 'สร้างและแก้ไขเกียรติบัตร'
+        {
+          text: 'ออกแบบเกียรติบัตร',
+          icon: <Category />,
+          path: '/designer-test',
+          description: 'ออกแบบเกียรติบัตรด้วย Designer'
         },
-        { 
-          text: 'การดำเนินการแบบกลุ่ม', 
+        {
+          text: 'Hybrid Designer',
+          icon: <Category />,
+          path: '/hybrid-designer-test',
+          description: 'ทดสอบ Hybrid Designer (Konva + Fabric)'
+        },
+        {
+          text: 'การดำเนินการแบบกลุ่ม',
           icon: <CloudUpload />, 
           path: '/bulk-operations',
           description: 'นำเข้าและสร้างเกียรติบัตรจำนวนมาก'

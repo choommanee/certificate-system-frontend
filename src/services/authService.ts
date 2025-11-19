@@ -36,18 +36,19 @@ export const authService = {
   async login(credentials: LoginCredentials): Promise<AuthResponse> {
     try {
       const response = await api.post('/auth/login', credentials);
-      const data = response.data.data;
-      
+      const data = response.data.data; // ✅ API ส่ง {data: {user, access_token, ...}, message}
+
       // Store tokens
       localStorage.setItem('token', data.access_token);
       localStorage.setItem('refresh_token', data.refresh_token);
-      
+
       return {
         user: data.user,
         access_token: data.access_token,
         refresh_token: data.refresh_token,
-        token: data.access_token, // for backward compatibility
-        refreshToken: data.refresh_token // for backward compatibility
+        expires_in: data.expires_in,     // ✅ เพิ่ม expires_in
+        token: data.access_token,         // for backward compatibility
+        refreshToken: data.refresh_token  // for backward compatibility
       };
     } catch (error: any) {
       throw new Error(error.response?.data?.error || 'Login failed');

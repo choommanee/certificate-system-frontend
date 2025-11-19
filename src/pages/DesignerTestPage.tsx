@@ -1,16 +1,12 @@
 // Test Page for Enhanced Designer with Certificate Template Support
 
 import React, { useState, useEffect } from 'react';
-import { 
-  Box, 
-  Typography, 
-  Container, 
-  Button, 
-  ButtonGroup, 
-  Paper,
+import {
+  Box,
+  Typography,
+  Button,
   Switch,
   FormControlLabel,
-  Divider,
   TextField,
   Dialog,
   DialogTitle,
@@ -21,16 +17,18 @@ import {
 import SimpleCertificateDesigner from '../components/designer/SimpleCertificateDesigner';
 import { SAMPLE_CERTIFICATE_DATA, AVAILABLE_DATA_FIELDS } from '../types/certificate-template';
 import DataBindingService from '../services/dataBindingService';
+import DashboardLayout from '../components/dashboard/DashboardLayout';
 import { authService } from '../services/authService';
+import { User } from '../types';
 
 const DesignerTestPage: React.FC = () => {
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [currentDocument, setCurrentDocument] = useState<any>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showLoginDialog, setShowLoginDialog] = useState(false);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [loginError, setLoginError] = useState('');
-  const [currentUser, setCurrentUser] = useState<any>(null);
 
   const handleSave = (document: any) => {
     setCurrentDocument(document);
@@ -117,30 +115,30 @@ const DesignerTestPage: React.FC = () => {
   };
 
   return (
-    <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Header */}
-      <Box sx={{ 
-        backgroundColor: '#1976d2', 
-        color: 'white', 
-        p: 2,
-        boxShadow: 1
-      }}>
-        <Container maxWidth={false}>
+    <DashboardLayout>
+      <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+        {/* Header */}
+        <Box sx={{
+          backgroundColor: '#1976d2',
+          color: 'white',
+          p: 2,
+          boxShadow: 1
+        }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Box>
               <Typography variant="h5" component="h1">
-                🎨 Enhanced Designer - Certificate Template Editor
+                🎨 Certificate Template Designer
               </Typography>
               <Typography variant="body2" sx={{ opacity: 0.9, mt: 0.5 }}>
                 Canvas-based certificate designer with data binding support
               </Typography>
               {currentUser && (
                 <Typography variant="body2" sx={{ opacity: 0.8, mt: 0.5 }}>
-                  👤 {currentUser.first_name} {currentUser.last_name} ({currentUser.role})
+                  👤 {currentUser.first_name_th} {currentUser.last_name_th} ({typeof currentUser.role === 'string' ? currentUser.role : currentUser.role?.name || 'N/A'})
                 </Typography>
               )}
             </Box>
-            
+
             {/* Preview Control */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
               <FormControlLabel
@@ -154,92 +152,86 @@ const DesignerTestPage: React.FC = () => {
                 label="โหมดแสดงตัวอย่าง"
                 sx={{ color: 'white' }}
               />
-              
-              <Button 
-                variant="contained" 
+
+              <Button
+                variant="contained"
                 color="secondary"
                 onClick={handlePreviewWithData}
                 disabled={!currentDocument}
+                size="small"
               >
                 แสดงตัวอย่างพร้อมข้อมูล
               </Button>
-              
-              <Button 
-                variant="outlined" 
-                color="inherit"
-                onClick={handleLogout}
-                sx={{ ml: 1 }}
-              >
-                ออกจากระบบ
-              </Button>
             </Box>
           </Box>
-        </Container>
-      </Box>
-      
+        </Box>
 
-
-      {/* Designer */}
-      <Box sx={{ flex: 1, overflow: 'hidden', backgroundColor: '#f8f9fa' }}>
-        {isAuthenticated && currentUser ? (
-          <SimpleCertificateDesigner
-            currentUser={currentUser}
-            onSave={handleSave}
-            onExport={handleExport}
-            isPreviewMode={isPreviewMode}
-            certificateData={isPreviewMode ? SAMPLE_CERTIFICATE_DATA : undefined}
-          />
-        ) : (
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-            <Typography variant="h6" color="text.secondary">
-              กรุณาเข้าสู่ระบบเพื่อใช้งาน Designer
-            </Typography>
-          </Box>
-        )}
-      </Box>
-
-      {/* Login Dialog */}
-      <Dialog open={showLoginDialog} onClose={() => {}} maxWidth="sm" fullWidth>
-        <DialogTitle>เข้าสู่ระบบ</DialogTitle>
-        <DialogContent>
-          {loginError && (
-            <Alert severity="error" sx={{ mb: 2 }}>
-              {loginError}
-            </Alert>
+        {/* Designer */}
+        <Box sx={{ flex: 1, overflow: 'hidden', backgroundColor: '#f8f9fa' }}>
+          {isAuthenticated && currentUser ? (
+            <SimpleCertificateDesigner
+              currentUser={{
+                id: String(currentUser.id),
+                name: `${currentUser.first_name_th} ${currentUser.last_name_th}`,
+                role: typeof currentUser.role === 'string' ? currentUser.role : currentUser.role?.name || ''
+              }}
+              onSave={handleSave}
+              onExport={handleExport}
+              isPreviewMode={isPreviewMode}
+              certificateData={isPreviewMode ? SAMPLE_CERTIFICATE_DATA : undefined}
+            />
+          ) : (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+              <Typography variant="h6" color="text.secondary">
+                กรุณาเข้าสู่ระบบเพื่อใช้งาน Designer
+              </Typography>
+            </Box>
           )}
-          <TextField
-            autoFocus
-            margin="dense"
-            label="อีเมล"
-            type="email"
-            fullWidth
-            variant="outlined"
-            value={loginForm.email}
-            onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
-            sx={{ mb: 2 }}
-          />
-          <TextField
-            margin="dense"
-            label="รหัสผ่าน"
-            type="password"
-            fullWidth
-            variant="outlined"
-            value={loginForm.password}
-            onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
-            onKeyPress={(e) => {
-              if (e.key === 'Enter') {
-                handleLogin();
-              }
-            }}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleLogin} variant="contained">
-            เข้าสู่ระบบ
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </Box>
+        </Box>
+
+        {/* Login Dialog */}
+        <Dialog open={showLoginDialog} onClose={() => {}} maxWidth="sm" fullWidth>
+          <DialogTitle>เข้าสู่ระบบ</DialogTitle>
+          <DialogContent>
+            {loginError && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {loginError}
+              </Alert>
+            )}
+            <TextField
+              autoFocus
+              margin="dense"
+              label="อีเมล"
+              type="email"
+              fullWidth
+              variant="outlined"
+              value={loginForm.email}
+              onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
+              sx={{ mb: 2 }}
+            />
+            <TextField
+              margin="dense"
+              label="รหัสผ่าน"
+              type="password"
+              fullWidth
+              variant="outlined"
+              value={loginForm.password}
+              onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+              onKeyPress={(e) => {
+                if (e.key === 'Enter') {
+                  handleLogin();
+                }
+              }}
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleLogin} variant="contained">
+              เข้าสู่ระบบ
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </Box>
+    </DashboardLayout>
   );
 };
 

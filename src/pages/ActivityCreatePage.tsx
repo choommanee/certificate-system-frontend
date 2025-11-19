@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Paper,
@@ -22,6 +22,7 @@ import {
   FormControlLabel,
   Switch,
   Divider,
+  CircularProgress,
 } from '@mui/material';
 import {
   ArrowBack,
@@ -39,44 +40,38 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
+import { activityService, templateService } from '../services/api';
+import type { ActivityCreateRequest } from '../services/api/types';
 
 interface ActivityForm {
   name: string;
   description: string;
-  category: string;
+  activityType: string;
   startDate: Date | null;
   endDate: Date | null;
   location: string;
   maxParticipants: number;
-  certificateTemplate: string;
-  organizers: string[];
-  requirements: string;
-  objectives: string;
-  isPublic: boolean;
-  allowRegistration: boolean;
-  registrationDeadline: Date | null;
+  certificateTemplateId: string;
+  organizer: string;
 }
 
 const ActivityCreatePage: React.FC = () => {
   const navigate = useNavigate();
   const [activeStep, setActiveStep] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
   const [error, setError] = useState('');
+  const [templates, setTemplates] = useState<Array<{ id: string; name: string }>>([]);
   const [form, setForm] = useState<ActivityForm>({
     name: '',
     description: '',
-    category: '',
+    activityType: '',
     startDate: null,
     endDate: null,
     location: '',
     maxParticipants: 50,
-    certificateTemplate: '',
-    organizers: [],
-    requirements: '',
-    objectives: '',
-    isPublic: true,
-    allowRegistration: true,
-    registrationDeadline: null,
+    certificateTemplateId: '',
+    organizer: '',
   });
 
   const steps = [
@@ -96,21 +91,24 @@ const ActivityCreatePage: React.FC = () => {
     'กิจกรรมนักศึกษา'
   ];
 
-  const templates = [
-    'เทมเพลตสัมมนา A',
-    'เทมเพลตหลักสูตร B',
-    'เทมเพลตการแข่งขัน C',
-    'เทมเพลตประชุม D',
-    'เทมเพลตอบรม E'
-  ];
+  // Load templates from API
+  useEffect(() => {
+    const fetchTemplates = async () => {
+      try {
+        setTemplatesLoading(true);
+        const response = await templateService.getTemplates({ page: 1, limit: 100 });
+        if (response.success && response.data) {
+          setTemplates(response.data.data.map(t => ({ id: t.id, name: t.name })));
+        }
+      } catch (err) {
+        console.error('Error loading templates:', err);
+      } finally {
+        setTemplatesLoading(false);
+      }
+    };
 
-  const organizers = [
-    'ดร.สมชาย ใจดี',
-    'อ.สมหญิง รักงาน',
-    'ผศ.บุญชู ขยัน',
-    'รศ.มาลี สวยงาม',
-    'ดร.สมศักดิ์ เก่งงาน'
-  ];
+    fetchTemplates();
+  }, []);
 
   const handleInputChange = (field: keyof ActivityForm, value: any) => {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -120,11 +118,27 @@ const ActivityCreatePage: React.FC = () => {
   const validateStep = (step: number) => {
     switch (step) {
       case 0:
-        return form.name && form.description && form.category;
+        if (!form.name || !form.activityType) {
+          setError('กรุณากรอกชื่อกิจกรรมและหมวดหมู่');
+          return false;
+        }
+        return true;
       case 1:
-        return form.startDate && form.endDate && form.location;
+        if (!form.startDate || !form.endDate) {
+          setError('กรุณาเลือกวันที่เริ่มและสิ้นสุดกิจกรรม');
+          return false;
+        }
+        if (form.startDate > form.endDate) {
+          setError('วันที่เริ่มต้องไม่เกินวันที่สิ้นสุด');
+          return false;
+        }
+        return true;
       case 2:
-        return form.certificateTemplate && form.organizers.length > 0;
+        if (!form.certificateTemplateId) {
+          setError('กรุณาเลือกเทมเพลตเกียรติบัตร');
+          return false;
+        }
+        return true;
       default:
         return true;
     }
@@ -134,8 +148,6 @@ const ActivityCreatePage: React.FC = () => {
     if (validateStep(activeStep)) {
       setActiveStep(prev => prev + 1);
       setError('');
-    } else {
-      setError('กรุณากรอกข้อมูลให้ครบถ้วน');
     }
   };
 
@@ -145,19 +157,39 @@ const ActivityCreatePage: React.FC = () => {
   };
 
   const handleSubmit = async () => {
+    if (!validateStep(activeStep)) {
+      return;
+    }
+
     setLoading(true);
+    setError('');
+
     try {
-      // TODO: Submit to API
-      console.log('Creating activity:', form);
-      
-      // Mock API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      navigate('/activities', { 
-        state: { message: 'สร้างกิจกรรมสำเร็จ' }
-      });
+      // Prepare data for API
+      const activityData: ActivityCreateRequest = {
+        name: form.name,
+        description: form.description || undefined,
+        activityType: form.activityType,
+        startDate: form.startDate!.toISOString(),
+        endDate: form.endDate!.toISOString(),
+        location: form.location || undefined,
+        organizer: form.organizer || undefined,
+        maxParticipants: form.maxParticipants > 0 ? form.maxParticipants : undefined,
+        certificateTemplateId: form.certificateTemplateId || undefined,
+      };
+
+      const response = await activityService.createActivity(activityData);
+
+      if (response.success) {
+        navigate('/activities', {
+          state: { message: 'สร้างกิจกรรมสำเร็จ' }
+        });
+      } else {
+        setError(response.message || 'เกิดข้อผิดพลาดในการสร้างกิจกรรม');
+      }
     } catch (err: any) {
-      setError(err.message || 'เกิดข้อผิดพลาดในการสร้างกิจกรรม');
+      console.error('Error creating activity:', err);
+      setError(err.response?.data?.message || err.message || 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้');
     } finally {
       setLoading(false);
     }
@@ -196,9 +228,9 @@ const ActivityCreatePage: React.FC = () => {
               <FormControl fullWidth required>
                 <InputLabel>หมวดหมู่กิจกรรม</InputLabel>
                 <Select
-                  value={form.category}
+                  value={form.activityType}
                   label="หมวดหมู่กิจกรรม"
-                  onChange={(e) => handleInputChange('category', e.target.value)}
+                  onChange={(e) => handleInputChange('activityType', e.target.value)}
                   sx={{ borderRadius: 2 }}
                 >
                   {categories.map(category => (
@@ -269,25 +301,11 @@ const ActivityCreatePage: React.FC = () => {
               <Grid item xs={12}>
                 <TextField
                   fullWidth
-                  multiline
-                  rows={3}
-                  label="วัตถุประสงค์ของกิจกรรม"
-                  value={form.objectives}
-                  onChange={(e) => handleInputChange('objectives', e.target.value)}
+                  label="ผู้จัดกิจกรรม"
+                  value={form.organizer}
+                  onChange={(e) => handleInputChange('organizer', e.target.value)}
                   sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-                  helperText="อธิบายวัตถุประสงค์และเป้าหมายของกิจกรรม"
-                />
-              </Grid>
-              <Grid item xs={12}>
-                <TextField
-                  fullWidth
-                  multiline
-                  rows={3}
-                  label="เงื่อนไขการเข้าร่วม"
-                  value={form.requirements}
-                  onChange={(e) => handleInputChange('requirements', e.target.value)}
-                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-                  helperText="ระบุเงื่อนไขหรือคุณสมบัติของผู้เข้าร่วม"
+                  helperText="ระบุชื่อผู้จัดหรือหน่วยงานที่จัดกิจกรรม"
                 />
               </Grid>
             </Grid>
@@ -296,92 +314,46 @@ const ActivityCreatePage: React.FC = () => {
 
       case 2:
         return (
-          <LocalizationProvider dateAdapter={AdapterDateFns}>
-            <Grid container spacing={3}>
-              <Grid item xs={12}>
-                <FormControl fullWidth required>
-                  <InputLabel>เทมเพลตเกียรติบัตร</InputLabel>
-                  <Select
-                    value={form.certificateTemplate}
-                    label="เทมเพลตเกียรติบัตร"
-                    onChange={(e) => handleInputChange('certificateTemplate', e.target.value)}
-                    sx={{ borderRadius: 2 }}
-                  >
-                    {templates.map(template => (
-                      <MenuItem key={template} value={template}>{template}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={12}>
-                <Autocomplete
-                  multiple
-                  options={organizers}
-                  value={form.organizers}
-                  onChange={(_, value) => handleInputChange('organizers', value)}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      label="ผู้จัดกิจกรรม"
-                      placeholder="เลือกผู้จัดกิจกรรม"
-                      required
-                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-                    />
-                  )}
-                  renderTags={(value, getTagProps) =>
-                    value.map((option, index) => (
-                      <Chip
-                        variant="outlined"
-                        label={option}
-                        {...getTagProps({ index })}
-                        avatar={<Avatar sx={{ width: 24, height: 24 }}>{option.charAt(0)}</Avatar>}
-                      />
+          <Grid container spacing={3}>
+            <Grid item xs={12}>
+              <FormControl fullWidth required>
+                <InputLabel>เทมเพลตเกียรติบัตร</InputLabel>
+                <Select
+                  value={form.certificateTemplateId}
+                  label="เทมเพลตเกียรติบัตร"
+                  onChange={(e) => handleInputChange('certificateTemplateId', e.target.value)}
+                  sx={{ borderRadius: 2 }}
+                  disabled={templatesLoading}
+                >
+                  {templatesLoading ? (
+                    <MenuItem disabled>
+                      <CircularProgress size={20} sx={{ mr: 1 }} />
+                      กำลังโหลดเทมเพลต...
+                    </MenuItem>
+                  ) : templates.length > 0 ? (
+                    templates.map(template => (
+                      <MenuItem key={template.id} value={template.id}>{template.name}</MenuItem>
                     ))
-                  }
-                />
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={form.isPublic}
-                      onChange={(e) => handleInputChange('isPublic', e.target.checked)}
-                      color="primary"
-                    />
-                  }
-                  label="เปิดให้สาธารณะเห็น"
-                />
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={form.allowRegistration}
-                      onChange={(e) => handleInputChange('allowRegistration', e.target.checked)}
-                      color="primary"
-                    />
-                  }
-                  label="เปิดรับสมัครออนไลน์"
-                />
-              </Grid>
-              {form.allowRegistration && (
-                <Grid item xs={12} md={6}>
-                  <DatePicker
-                    label="วันสุดท้ายของการสมัคร"
-                    value={form.registrationDeadline}
-                    onChange={(date) => handleInputChange('registrationDeadline', date)}
-                    renderInput={(params) => (
-                      <TextField 
-                        {...params} 
-                        fullWidth
-                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-                      />
-                    )}
-                  />
-                </Grid>
+                  ) : (
+                    <MenuItem disabled>ไม่พบเทมเพลต</MenuItem>
+                  )}
+                </Select>
+              </FormControl>
+              {!templatesLoading && templates.length === 0 && (
+                <Alert severity="warning" sx={{ mt: 2 }}>
+                  ยังไม่มีเทมเพลตเกียรติบัตรในระบบ กรุณาสร้างเทมเพลตก่อนสร้างกิจกรรม
+                </Alert>
               )}
             </Grid>
-          </LocalizationProvider>
+            <Grid item xs={12}>
+              <Alert severity="info" sx={{ borderRadius: 2 }}>
+                <Typography variant="body2">
+                  คุณสามารถกำหนดเทมเพลตเกียรติบัตรที่จะใช้สำหรับกิจกรรมนี้
+                  หากไม่ระบุ คุณสามารถเลือกเทมเพลตได้ในภายหลัง
+                </Typography>
+              </Alert>
+            </Grid>
+          </Grid>
         );
 
       case 3:
@@ -403,11 +375,11 @@ const ActivityCreatePage: React.FC = () => {
                   </Grid>
                   <Grid item xs={12} sm={6}>
                     <Typography variant="body2" color="text.secondary">หมวดหมู่:</Typography>
-                    <Chip label={form.category} size="small" color="primary" />
+                    <Chip label={form.activityType} size="small" color="primary" />
                   </Grid>
                   <Grid item xs={12}>
                     <Typography variant="body2" color="text.secondary">คำอธิบาย:</Typography>
-                    <Typography variant="body1">{form.description}</Typography>
+                    <Typography variant="body1">{form.description || 'ไม่ได้ระบุ'}</Typography>
                   </Grid>
                 </Grid>
               </CardContent>
@@ -427,11 +399,15 @@ const ActivityCreatePage: React.FC = () => {
                   </Grid>
                   <Grid item xs={12} sm={6}>
                     <Typography variant="body2" color="text.secondary">สถานที่:</Typography>
-                    <Typography variant="body1" sx={{ fontWeight: 600 }}>{form.location}</Typography>
+                    <Typography variant="body1" sx={{ fontWeight: 600 }}>{form.location || 'ไม่ได้ระบุ'}</Typography>
                   </Grid>
                   <Grid item xs={12} sm={6}>
                     <Typography variant="body2" color="text.secondary">จำนวนผู้เข้าร่วม:</Typography>
-                    <Typography variant="body1" sx={{ fontWeight: 600 }}>{form.maxParticipants} คน</Typography>
+                    <Typography variant="body1" sx={{ fontWeight: 600 }}>{form.maxParticipants > 0 ? `${form.maxParticipants} คน` : 'ไม่จำกัด'}</Typography>
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <Typography variant="body2" color="text.secondary">ผู้จัด:</Typography>
+                    <Typography variant="body1" sx={{ fontWeight: 600 }}>{form.organizer || 'ไม่ได้ระบุ'}</Typography>
                   </Grid>
                 </Grid>
               </CardContent>
@@ -443,22 +419,13 @@ const ActivityCreatePage: React.FC = () => {
                   การตั้งค่า
                 </Typography>
                 <Grid container spacing={2}>
-                  <Grid item xs={12} sm={6}>
-                    <Typography variant="body2" color="text.secondary">เทมเพลตเกียรติบัตร:</Typography>
-                    <Typography variant="body1" sx={{ fontWeight: 600 }}>{form.certificateTemplate}</Typography>
-                  </Grid>
                   <Grid item xs={12}>
-                    <Typography variant="body2" color="text.secondary">ผู้จัดกิจกรรม:</Typography>
-                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1 }}>
-                      {form.organizers.map(organizer => (
-                        <Chip
-                          key={organizer}
-                          label={organizer}
-                          avatar={<Avatar sx={{ width: 24, height: 24 }}>{organizer.charAt(0)}</Avatar>}
-                          size="small"
-                        />
-                      ))}
-                    </Box>
+                    <Typography variant="body2" color="text.secondary">เทมเพลตเกียรติบัตร:</Typography>
+                    <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                      {form.certificateTemplateId
+                        ? templates.find(t => t.id === form.certificateTemplateId)?.name || 'ไม่พบเทมเพลต'
+                        : 'ไม่ได้ระบุ (สามารถเลือกได้ในภายหลัง)'}
+                    </Typography>
                   </Grid>
                 </Grid>
               </CardContent>

@@ -35,7 +35,7 @@ import {
   Edit,
   DataObject
 } from '@mui/icons-material';
-import { Stage, Layer } from 'react-konva';
+import { Stage, Layer, Rect, Line, Text as KonvaText, Image as KonvaImage } from 'react-konva';
 
 import { DesignerSidebar } from './DesignerSidebar';
 import { ElementRenderer } from './ElementRenderer';

@@ -246,7 +246,8 @@ export class EnhancedAuthManager {
   // Multi-Factor Authentication
   static requiresMFA(user: User): boolean {
     const policy = this.getSecurityPolicy();
-    return policy.requireMFA || user.role === 'admin' || user.role === 'signer';
+    const roleName = typeof user.role === 'string' ? user.role : user.role?.name;
+    return policy.requireMFA || roleName === 'admin' || roleName === 'signer';
   }
 
   static generateMFASecret(): string {

@@ -64,6 +64,7 @@ import {
   Clear as ClearIcon,
   AspectRatio as PaperSizeIcon,
   ScreenRotation as RotateIcon,
+  Draw as SignatureIcon,
 } from '@mui/icons-material';
 import { Stage, Layer, Text, Rect, Group, Circle } from 'react-konva';
 import Konva from 'konva';
@@ -79,8 +80,11 @@ import FontPicker from './FontPicker';
 import FontService from '../../services/fontService';
 import ElementPropertiesPanel from './ElementPropertiesPanel';
 import ImageElement, { ImageElementData } from './ImageElement';
+import { TextElement } from './TextElement';
 import ImageUploadDialog from './ImageUploadDialog';
+import SignaturePickerDialog from './SignaturePickerDialog';
 import TemplateService, { CertificateTemplate } from '../../services/templateService';
+import type { Signature } from '../../services/api/types';
 
 interface SimpleCertificateDesignerProps {
   currentUser?: {
@@ -107,6 +111,11 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [showDataBindingPopup, setShowDataBindingPopup] = useState(false);
   const [showImageUploadDialog, setShowImageUploadDialog] = useState(false);
+  const [showSignaturePickerDialog, setShowSignaturePickerDialog] = useState(false);
+  const [showTemplatesModal, setShowTemplatesModal] = useState(false);
+  const [showSavedTemplatesModal, setShowSavedTemplatesModal] = useState(false);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [saveFormData, setSaveFormData] = useState({ name: '', description: '' });
   const [popupPosition, setPopupPosition] = useState({ x: 100, y: 100 });
   const [activeTab, setActiveTab] = useState(0);
   const [currentDocument, setCurrentDocument] = useState<any>(null);
@@ -357,6 +366,38 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
     };
 
     setImageElements(prev => [...prev, newImageElement]);
+  };
+
+  // Handle signature selection from SignaturePickerDialog
+  const handleSignatureSelect = (signature: Signature) => {
+    const signerName = signature.signer
+      ? `${signature.signer.first_name_th} ${signature.signer.last_name_th}`
+      : 'Signature';
+
+    const newSignatureElement: ImageElementData = {
+      id: `signature-${Date.now()}`,
+      type: 'image',
+      x: canvasWidth / 2 - 100,
+      y: canvasHeight - 200,
+      width: 200,
+      height: 100,
+      rotation: 0,
+      opacity: 1,
+      visible: true,
+      locked: false,
+      zIndex: imageElements.length + elements.length,
+      src: signature.signatureImageUrl,
+      name: `Signature: ${signerName}`,
+      metadata: {
+        signatureId: signature.id,
+        signerId: signature.signerId,
+        position: signature.position,
+        department: signature.department
+      }
+    };
+
+    setImageElements(prev => [...prev, newSignatureElement]);
+    setShowSignaturePickerDialog(false);
   };
 
   // Handle image layer changes
@@ -1461,20 +1502,26 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
   };
 
   // Save template to database via API
-  const handleSave = async () => {
-    console.log('=== HANDLE SAVE CALLED ===');
-    
-    const templateName = prompt('Enter template name:', 'My Certificate Template');
-    if (!templateName) {
-      console.log('Template name cancelled by user');
+  const handleSave = () => {
+    // Open save dialog
+    setSaveFormData({
+      name: `Certificate Template ${new Date().toLocaleDateString()}`,
+      description: ''
+    });
+    setShowSaveDialog(true);
+  };
+
+  const handleConfirmSave = async () => {
+    console.log('=== HANDLE CONFIRM SAVE ===');
+
+    if (!saveFormData.name.trim()) {
+      setTemplateError('Template name is required');
       return;
     }
-    
-    console.log('Template name:', templateName);
-    console.log('Setting saving state...');
 
     setIsSavingTemplate(true);
     setTemplateError(null);
+    setShowSaveDialog(false);
 
     try {
       // Declare pageElements variable
@@ -1541,50 +1588,92 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
         const elementType = anyElement.elementType || anyElement.type || 'text';
         
         if (elementType === 'text') {
+          // Extract text value - handle both string and object content
+          const textValue = typeof anyElement.content === 'string'
+            ? anyElement.content
+            : (anyElement.content?.text || anyElement.text || anyElement.displayText || '');
+
           transformedContent = {
-            text: anyElement.content || anyElement.text || anyElement.displayText || ''
+            text: textValue
           };
           // Only add placeholder if it has a value
-          if (anyElement.placeholder && anyElement.placeholder !== null) {
-            (transformedContent as any).placeholder = anyElement.placeholder;
+          const placeholderValue = anyElement.placeholder || anyElement.content?.placeholder || props.placeholder;
+          if (placeholderValue && placeholderValue !== null) {
+            (transformedContent as any).placeholder = placeholderValue;
           }
         } else if (elementType === 'image') {
+          // Extract image URL - handle both string and object content
+          const imageUrl = typeof anyElement.content === 'string'
+            ? anyElement.content
+            : (anyElement.content?.image_url || anyElement.src || anyElement.imageData || '');
+
           transformedContent = {
-            image_url: anyElement.src || anyElement.imageData || anyElement.content || ''
+            image_url: imageUrl
           };
-          if (anyElement.alt) {
-            (transformedContent as any).image_alt = anyElement.alt;
+          const altText = anyElement.alt || anyElement.content?.image_alt;
+          if (altText) {
+            (transformedContent as any).image_alt = altText;
           }
         } else if (elementType === 'shape') {
           transformedContent = {
-            shape_type: anyElement.shapeType || 'rectangle'
+            shape_type: anyElement.shapeType || anyElement.content?.shape_type || 'rectangle'
           };
         } else if (elementType === 'qr-code' || elementType === 'qr_code') {
+          // Extract QR code data - handle both string and object content
+          const qrData = typeof anyElement.content === 'string'
+            ? anyElement.content
+            : (anyElement.content?.qr_code_data || anyElement.data || '');
+
           transformedContent = {
-            qr_code_data: anyElement.content || anyElement.data || ''
+            qr_code_data: qrData
           };
         } else if (elementType === 'template-variable') {
-          // Handle template variables
+          // Handle template variables - extract from properties and content
           const props = anyElement.properties || {};
           const dataBinding = props.dataBinding || {};
-          
+
+          // Get text value - could be in displayText, content.text, or text
+          const textValue = anyElement.displayText
+            || (typeof anyElement.content === 'object' ? anyElement.content?.text : anyElement.content)
+            || anyElement.text
+            || '';
+
+          // Get placeholder - could be in multiple places
+          const placeholderValue = props.placeholder
+            || anyElement.placeholder
+            || (typeof anyElement.content === 'object' ? anyElement.content?.placeholder : '')
+            || '';
+
+          // Get variable path
+          const variablePath = dataBinding.fieldPath
+            || anyElement.fieldPath
+            || anyElement.variable
+            || (typeof anyElement.content === 'object' ? anyElement.content?.variable : '')
+            || '';
+
           transformedContent = {
-            variable: dataBinding.fieldPath || anyElement.fieldPath || anyElement.variable || '',
-            text: anyElement.displayText || anyElement.content || anyElement.text || '',
-            placeholder: props.placeholder || anyElement.placeholder || ''
+            variable: variablePath,
+            text: textValue,
+            placeholder: placeholderValue
           };
         } else {
           // Default fallback for other types
+          const textValue = typeof anyElement.content === 'string'
+            ? anyElement.content
+            : (anyElement.displayText || anyElement.text || '');
+
           transformedContent = {
-            text: typeof anyElement.content === 'string' ? anyElement.content : (anyElement.displayText || '')
+            text: textValue
           };
         }
 
         return {
           id: anyElement.id || crypto.randomUUID(), // Ensure each element has a unique ID
           type: elementType, // Use consistent elementType
-          position: anyElement.position || { x: anyElement.x || 0, y: anyElement.y || 0 },
-          size: anyElement.size || { width: anyElement.width || 100, height: anyElement.height || 50 },
+          // Always use direct x, y properties (updated by Konva), not the position object
+          position: { x: anyElement.x || 0, y: anyElement.y || 0 },
+          // Always use direct width, height properties (updated by Konva), not the size object
+          size: { width: anyElement.width || 100, height: anyElement.height || 50 },
           style: finalStyle,
           content: transformedContent,
           z_index: anyElement.zIndex || index,
@@ -1593,8 +1682,8 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
       });
 
       const templateData = {
-        name: templateName,
-        description: `Certificate template created on ${new Date().toLocaleDateString()}`,
+        name: saveFormData.name,
+        description: saveFormData.description || `Certificate template created on ${new Date().toLocaleDateString()}`,
         category: 'certificate',
         design: {
           canvas: {
@@ -1619,7 +1708,7 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
       existingTemplates.push(savedTemplate);
       localStorage.setItem('savedCertificateTemplates', JSON.stringify(existingTemplates));
       
-      showAlertDialog('Success', `Template "${templateName}" saved successfully to database!`, 'success');
+      showAlertDialog('Success', `Template "${saveFormData.name}" saved successfully to database!`, 'success');
 
       // Also call onSave prop if provided
       if (onSave) {
@@ -1653,7 +1742,8 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
       // Fallback to localStorage only
       const localTemplate = {
         id: `cert-template-${Date.now()}`,
-        name: templateName,
+        name: saveFormData.name,
+        description: saveFormData.description,
         elements: elements,
         canvasWidth: canvasWidth,
         canvasHeight: canvasHeight,
@@ -1661,13 +1751,13 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
-      
+
       const existingTemplates = JSON.parse(localStorage.getItem('savedCertificateTemplates') || '[]');
       existingTemplates.push(localTemplate);
       localStorage.setItem('savedCertificateTemplates', JSON.stringify(existingTemplates));
       setSavedTemplates(prev => [...prev, localTemplate as CertificateTemplate]);
-      
-      showAlertDialog('Warning', `Template "${templateName}" saved locally (server unavailable)`, 'warning');
+
+      showAlertDialog('Warning', `Template "${saveFormData.name}" saved locally (server unavailable)`, 'warning');
     } finally {
       setIsSavingTemplate(false);
     }
@@ -1699,10 +1789,13 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
       // Load template data and convert API format to frontend format
       const allElements = (templateToLoad.design?.elements || []).map((element: any) => {
         // Convert API element format to frontend element format
+        // IMPORTANT: Don't spread ...element to avoid keeping position/size objects
+        const elementType = element.elementType || element.type || 'text';
         const frontendElement = {
-          ...element,
           id: element.id === '00000000-0000-0000-0000-000000000000' ? crypto.randomUUID() : element.id,
-          // Convert position/size from API format
+          type: elementType,
+          elementType: elementType,
+          // Convert position/size from API format to direct properties (Konva format)
           x: element.position?.x || 0,
           y: element.position?.y || 0,
           width: element.size?.width || 100,
@@ -1729,9 +1822,13 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
             color: element.style?.color || '#000000',
             textAlign: element.style?.text_align || 'left',
             verticalAlign: element.style?.vertical_align || 'top',
+            textDecoration: element.style?.text_decoration || 'none',
+            lineHeight: element.style?.line_height || 1.2,
+            letterSpacing: element.style?.letter_spacing || 0,
+            padding: element.style?.padding || 0,
             placeholder: element.content?.placeholder || '',
             dataBinding: {
-              type: 'text',
+              type: 'text' as const,
               label: element.content?.placeholder || 'Text Field',
               fieldPath: element.content?.variable || ''
             }
@@ -1740,8 +1837,6 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
           displayText: element.content?.placeholder || element.content?.text || '',
           content: element.content?.text || '',
           placeholder: element.content?.placeholder || '',
-          // Preserve element type information
-          elementType: element.elementType || element.type || 'text',
           // For image elements, preserve image data (handle different API formats)
           src: element.content?.image_url || element.content?.src || element.src || '',
           imageData: element.content?.image_url || element.content?.imageData || element.imageData || ''
@@ -2161,10 +2256,11 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
                     const tempHeight = startHeight - deltaY;
                     newWidth = Math.max(50, tempWidth);
                     newHeight = Math.max(20, tempHeight);
-                    
+
                     // Calculate position to keep bottom-right corner fixed
-                    const widthDiff = newWidth - startWidth;
-                    const heightDiff = newHeight - startHeight;
+                    // When width increases (newWidth > startWidth), x should decrease
+                    const widthDiff = startWidth - newWidth;
+                    const heightDiff = startHeight - newHeight;
                     newX = startX - widthDiff;
                     newY = startY - heightDiff;
                   }
@@ -2174,9 +2270,9 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
                     const tempHeight = startHeight - deltaY;
                     newWidth = Math.max(50, startWidth + deltaX);
                     newHeight = Math.max(20, tempHeight);
-                    
+
                     // Calculate Y position to keep bottom-left corner fixed
-                    const heightDiff = newHeight - startHeight;
+                    const heightDiff = startHeight - newHeight;
                     newY = startY - heightDiff;
                   }
                   break;
@@ -2189,9 +2285,9 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
                     const tempWidth = startWidth - deltaX;
                     newWidth = Math.max(50, tempWidth);
                     newHeight = Math.max(20, startHeight + deltaY);
-                    
+
                     // Calculate X position to keep top-right corner fixed
-                    const widthDiff = newWidth - startWidth;
+                    const widthDiff = startWidth - newWidth;
                     newX = startX - widthDiff;
                   }
                   break;
@@ -2199,9 +2295,9 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
                   {
                     const tempHeight = startHeight - deltaY;
                     newHeight = Math.max(20, tempHeight);
-                    
+
                     // Calculate Y position to keep bottom edge fixed
-                    const heightDiff = newHeight - startHeight;
+                    const heightDiff = startHeight - newHeight;
                     newY = startY - heightDiff;
                   }
                   break;
@@ -2215,9 +2311,9 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
                   {
                     const tempWidth = startWidth - deltaX;
                     newWidth = Math.max(50, tempWidth);
-                    
+
                     // Calculate X position to keep right edge fixed
-                    const widthDiff = newWidth - startWidth;
+                    const widthDiff = startWidth - newWidth;
                     newX = startX - widthDiff;
                   }
                   break;
@@ -2319,11 +2415,18 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
   };
 
   return (
-    <Box sx={{ display: 'flex', height: '100%', backgroundColor: '#f8f9fa' }}>
+    <Box sx={{ display: 'flex', height: '100vh', backgroundColor: '#f8f9fa' }}>
       {/* Left Sidebar - Tools */}
       {!isPreviewMode && (
-        <Paper sx={{ width: 280, borderRadius: 0, borderRight: 1, borderColor: 'divider', backgroundColor: 'white' }}>
-          <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
+        <Box sx={{
+          width: 280,
+          borderRight: 1,
+          borderColor: 'divider',
+          backgroundColor: 'white',
+          overflowY: 'auto',
+          overflowX: 'hidden'
+        }}>
+          <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', position: 'sticky', top: 0, backgroundColor: 'white', zIndex: 1 }}>
             <Typography variant="h6" gutterBottom>
               🎨 Elements
             </Typography>
@@ -2336,7 +2439,7 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
             value={activeTab}
             onChange={(e, newValue) => setActiveTab(newValue)}
             variant="fullWidth"
-            sx={{ borderBottom: 1, borderColor: 'divider' }}
+            sx={{ borderBottom: 1, borderColor: 'divider', position: 'sticky', top: 76, backgroundColor: 'white', zIndex: 1 }}
           >
             <Tab label="Templates" />
             <Tab label="Elements" />
@@ -2344,7 +2447,7 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
             <Tab label="Layers" />
           </Tabs>
 
-          <Box sx={{ p: 2, height: 'calc(100% - 140px)', overflow: 'auto' }}>
+          <Box sx={{ p: 2 }}>
             {activeTab === 0 && (
               <Box>
                 {/* Templates & Backgrounds */}
@@ -2426,198 +2529,27 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
                   ))}
                 </Box>
 
-                {/* Certificate Templates */}
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                  Certificate Templates
-                </Typography>
-                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr', gap: 2 }}>
-                  {[
-                    { 
-                      key: 'modern-corporate', 
-                      name: '🏢 Modern Corporate', 
-                      preview: 'Sleek blue gradient with professional layout, perfect for business achievements and corporate training',
-                      gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-                    },
-                    { 
-                      key: 'creative-burst', 
-                      name: '🎨 Creative Burst', 
-                      preview: 'Vibrant pink-orange gradient with bold typography, ideal for creative achievements and design awards',
-                      gradient: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)'
-                    },
-                    { 
-                      key: 'nature-fresh', 
-                      name: '🌿 Nature Fresh', 
-                      preview: 'Refreshing green-cyan gradient with clean design, perfect for environmental and wellness programs',
-                      gradient: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)'
-                    },
-                    { 
-                      key: 'golden-premium', 
-                      name: '👑 Golden Premium', 
-                      preview: 'Luxurious gold-pink gradient with premium styling, designed for top-tier excellence and VIP recognition',
-                      gradient: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)'
-                    },
-                    { 
-                      key: 'ocean-depth', 
-                      name: '🌊 Ocean Depth', 
-                      preview: 'Deep blue-teal gradient with elegant waves, suitable for maritime, research, and academic excellence',
-                      gradient: 'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)'
-                    },
-                    { 
-                      key: 'sunset-glow', 
-                      name: '🌅 Sunset Glow', 
-                      preview: 'Warm orange-red gradient with modern typography, perfect for leadership and innovation awards',
-                      gradient: 'linear-gradient(135deg, #ff6b6b 0%, #ffa726 100%)'
-                    }
-                  ].map((template, index) => (
-                    <Card
-                      key={index}
-                      sx={{
-                        p: 2,
-                        cursor: 'pointer',
-                        '&:hover': { 
-                          backgroundColor: 'action.hover',
-                          transform: 'translateY(-2px)',
-                          boxShadow: 3
-                        },
-                        border: '1px solid #e0e0e0',
-                        borderRadius: 2,
-                        transition: 'all 0.2s ease-in-out',
-                        position: 'relative',
-                        overflow: 'hidden'
-                      }}
-                      onClick={() => {
-                        loadTemplate(template.key);
-                      }}
-                    >
-                      {/* Gradient Preview Bar */}
-                      <Box
-                        sx={{
-                          position: 'absolute',
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          height: 4,
-                          background: template.gradient
-                        }}
-                      />
-                      
-                      <Typography variant="subtitle2" gutterBottom sx={{ mt: 0.5, fontWeight: 'bold' }}>
-                        {template.name}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.4 }}>
-                        {template.preview}
-                      </Typography>
-                      
-                      {/* Preview Badge */}
-                      <Box sx={{ mt: 1, display: 'flex', justifyContent: 'flex-end' }}>
-                        <Typography variant="caption" sx={{ 
-                          background: template.gradient,
-                          color: 'white',
-                          px: 1,
-                          py: 0.5,
-                          borderRadius: 1,
-                          fontSize: '0.7rem',
-                          fontWeight: 'bold'
-                        }}>
-                          Click to Apply
-                        </Typography>
-                      </Box>
-                    </Card>
-                  ))}
-                </Box>
+                {/* Certificate Templates Button */}
+                <Button
+                  variant="outlined"
+                  fullWidth
+                  startIcon={<DataIcon />}
+                  onClick={() => setShowTemplatesModal(true)}
+                  sx={{ mb: 2 }}
+                >
+                  Certificate Templates (6)
+                </Button>
 
-                {/* Saved Templates Section */}
-                <Divider sx={{ my: 3 }} />
-                <Typography variant="subtitle2" sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-                  💾 My Saved Templates 
-                  {isLoadingTemplates ? '(Loading...)' : `(${savedTemplates?.length || 0})`}
-                </Typography>
-                
-                {/* Loading State */}
-                {isLoadingTemplates && (!savedTemplates || savedTemplates.length === 0) && (
-                  <Box sx={{ textAlign: 'center', py: 3 }}>
-                    <Typography variant="body2" color="text.secondary">
-                      Loading your templates...
-                    </Typography>
-                  </Box>
-                )}
-                
-                {/* Empty State */}
-                {!isLoadingTemplates && (!savedTemplates || savedTemplates.length === 0) && (
-                  <Box sx={{ textAlign: 'center', py: 3 }}>
-                    <Typography variant="body2" color="text.secondary">
-                      No saved templates yet. Create and save your first template!
-                    </Typography>
-                  </Box>
-                )}
-                
-                {/* Templates List */}
-                {savedTemplates && savedTemplates.length > 0 && (
-                  <Box sx={{ display: 'grid', gridTemplateColumns: '1fr', gap: 2 }}>
-                    {savedTemplates.map((template, index) => (
-                      <Card
-                        key={template.id}
-                        sx={{
-                          p: 2,
-                          cursor: 'pointer',
-                          '&:hover': { 
-                            backgroundColor: 'action.hover',
-                            transform: 'translateY(-2px)',
-                            boxShadow: 3
-                          },
-                          transition: 'all 0.2s ease-in-out'
-                        }}
-                      >
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-                          <Typography variant="subtitle2" fontWeight="bold">
-                            {template.name}
-                          </Typography>
-                          <Chip 
-                            label={`${template.design?.elements?.length || 0} elements`}
-                            size="small"
-                            color="primary"
-                            variant="outlined"
-                          />
-                        </Box>
-                        
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                          {template.description || 'No description'}
-                        </Typography>
-                        
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                          <Typography variant="caption" color="text.secondary">
-                            Created: {new Date(template.created_at).toLocaleDateString()}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {template.design?.canvas?.width || 800}×{template.design?.canvas?.height || 600}px
-                          </Typography>
-                        </Box>
-                        
-                        <Box sx={{ display: 'flex', gap: 1 }}>
-                          <Button
-                            variant="contained"
-                            size="small"
-                            fullWidth
-                            onClick={() => loadSavedTemplate(template)}
-                          >
-                            Load Template
-                          </Button>
-                          <Button
-                            variant="outlined"
-                            size="small"
-                            color="error"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              deleteSavedTemplate(template.id);
-                            }}
-                          >
-                            Delete
-                          </Button>
-                        </Box>
-                      </Card>
-                    ))}
-                  </Box>
-                )}
+                {/* Saved Templates Button */}
+                <Button
+                  variant="outlined"
+                  fullWidth
+                  startIcon={<SaveIcon />}
+                  onClick={() => setShowSavedTemplatesModal(true)}
+                  sx={{ mb: 2 }}
+                >
+                  💾 My Saved Templates {isLoadingTemplates ? '(Loading...)' : `(${savedTemplates?.length || 0})`}
+                </Button>
               </Box>
             )}
             
@@ -2625,59 +2557,73 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
               <Box>
                 {/* Element Tools */}
                 <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
-                  <Card 
-                    sx={{ 
-                      p: 2, 
-                      textAlign: 'center', 
+                  <Card
+                    sx={{
+                      p: 1,
+                      textAlign: 'center',
                       cursor: 'pointer',
                       '&:hover': { backgroundColor: 'action.hover' }
                     }}
                     onClick={() => addBasicTextElement()}
                   >
-                    <TextIcon sx={{ fontSize: 32, color: 'primary.main', mb: 1 }} />
-                    <Typography variant="caption" display="block">
+                    <TextIcon sx={{ fontSize: 24, color: 'primary.main', mb: 0.5 }} />
+                    <Typography variant="caption" display="block" sx={{ fontSize: '0.7rem' }}>
                       Text
                     </Typography>
                   </Card>
-                  <Card 
-                    sx={{ 
-                      p: 2, 
-                      textAlign: 'center', 
+                  <Card
+                    sx={{
+                      p: 1,
+                      textAlign: 'center',
                       cursor: 'pointer',
                       '&:hover': { backgroundColor: 'action.hover' }
                     }}
                     onClick={openDataBindingPopup}
                   >
-                    <DataIcon sx={{ fontSize: 32, color: 'success.main', mb: 1 }} />
-                    <Typography variant="caption" display="block">
+                    <DataIcon sx={{ fontSize: 24, color: 'success.main', mb: 0.5 }} />
+                    <Typography variant="caption" display="block" sx={{ fontSize: '0.7rem' }}>
                       Data Field
                     </Typography>
                   </Card>
-                  <Card 
-                    sx={{ 
-                      p: 2, 
-                      textAlign: 'center', 
+                  <Card
+                    sx={{
+                      p: 1,
+                      textAlign: 'center',
                       cursor: 'pointer',
                       '&:hover': { backgroundColor: 'action.hover' }
                     }}
                     onClick={() => setShowImageUploadDialog(true)}
                   >
-                    <ImageIcon sx={{ fontSize: 32, color: 'warning.main', mb: 1 }} />
-                    <Typography variant="caption" display="block">
+                    <ImageIcon sx={{ fontSize: 24, color: 'warning.main', mb: 0.5 }} />
+                    <Typography variant="caption" display="block" sx={{ fontSize: '0.7rem' }}>
                       Image
                     </Typography>
                   </Card>
-                  <Card 
-                    sx={{ 
-                      p: 2, 
-                      textAlign: 'center', 
+                  <Card
+                    sx={{
+                      p: 1,
+                      textAlign: 'center',
+                      cursor: 'pointer',
+                      '&:hover': { backgroundColor: 'action.hover' }
+                    }}
+                    onClick={() => setShowSignaturePickerDialog(true)}
+                  >
+                    <SignatureIcon sx={{ fontSize: 24, color: 'secondary.main', mb: 0.5 }} />
+                    <Typography variant="caption" display="block" sx={{ fontSize: '0.7rem' }}>
+                      Signature
+                    </Typography>
+                  </Card>
+                  <Card
+                    sx={{
+                      p: 1,
+                      textAlign: 'center',
                       cursor: 'pointer',
                       '&:hover': { backgroundColor: 'action.hover' }
                     }}
                     onClick={() => addQRCodeElement()}
                   >
-                    <Typography sx={{ fontSize: 32, mb: 1 }}>📱</Typography>
-                    <Typography variant="caption" display="block">
+                    <Typography sx={{ fontSize: 24, mb: 0.5 }}>📱</Typography>
+                    <Typography variant="caption" display="block" sx={{ fontSize: '0.7rem' }}>
                       QR Code
                     </Typography>
                   </Card>
@@ -2690,59 +2636,59 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
                   Layout Elements
                 </Typography>
                 <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, mb: 2 }}>
-                  <Card 
-                    sx={{ 
-                      p: 2, 
-                      textAlign: 'center', 
+                  <Card
+                    sx={{
+                      p: 1,
+                      textAlign: 'center',
                       cursor: 'pointer',
                       '&:hover': { backgroundColor: 'action.hover' }
                     }}
                     onClick={() => addRectangleElement()}
                   >
-                    <ShapeIcon sx={{ fontSize: 32, color: 'info.main', mb: 1 }} />
-                    <Typography variant="caption" display="block">
+                    <ShapeIcon sx={{ fontSize: 24, color: 'info.main', mb: 0.5 }} />
+                    <Typography variant="caption" display="block" sx={{ fontSize: '0.7rem' }}>
                       Rectangle
                     </Typography>
                   </Card>
-                  <Card 
-                    sx={{ 
-                      p: 2, 
-                      textAlign: 'center', 
+                  <Card
+                    sx={{
+                      p: 1,
+                      textAlign: 'center',
                       cursor: 'pointer',
                       '&:hover': { backgroundColor: 'action.hover' }
                     }}
                     onClick={() => addLineElement()}
                   >
-                    <Typography sx={{ fontSize: 32, mb: 1 }}>📏</Typography>
-                    <Typography variant="caption" display="block">
+                    <Typography sx={{ fontSize: 24, mb: 0.5 }}>📏</Typography>
+                    <Typography variant="caption" display="block" sx={{ fontSize: '0.7rem' }}>
                       Line
                     </Typography>
                   </Card>
-                  <Card 
-                    sx={{ 
-                      p: 2, 
-                      textAlign: 'center', 
+                  <Card
+                    sx={{
+                      p: 1,
+                      textAlign: 'center',
                       cursor: 'pointer',
                       '&:hover': { backgroundColor: 'action.hover' }
                     }}
                     onClick={() => addCircleElement()}
                   >
-                    <Typography sx={{ fontSize: 32, mb: 1 }}>⭕</Typography>
-                    <Typography variant="caption" display="block">
+                    <Typography sx={{ fontSize: 24, mb: 0.5 }}>⭕</Typography>
+                    <Typography variant="caption" display="block" sx={{ fontSize: '0.7rem' }}>
                       Circle
                     </Typography>
                   </Card>
-                  <Card 
-                    sx={{ 
-                      p: 2, 
-                      textAlign: 'center', 
+                  <Card
+                    sx={{
+                      p: 1,
+                      textAlign: 'center',
                       cursor: 'pointer',
                       '&:hover': { backgroundColor: 'action.hover' }
                     }}
                     onClick={() => addContainerElement()}
                   >
-                    <Typography sx={{ fontSize: 32, mb: 1 }}>📦</Typography>
-                    <Typography variant="caption" display="block">
+                    <Typography sx={{ fontSize: 24, mb: 0.5 }}>📦</Typography>
+                    <Typography variant="caption" display="block" sx={{ fontSize: '0.7rem' }}>
                       Container
                     </Typography>
                   </Card>
@@ -2754,20 +2700,18 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
                 <Typography variant="subtitle2" gutterBottom>
                   Quick Actions
                 </Typography>
-                <ButtonGroup orientation="vertical" fullWidth size="small">
-                  <Button 
-                    startIcon={isSavingTemplate ? undefined : <SaveIcon />} 
-                    onClick={handleSave}
-                    disabled={isSavingTemplate}
-                    variant={isSavingTemplate ? "outlined" : "contained"}
-                  >
-                    {isSavingTemplate ? 'Saving...' : 'Save Template'}
-                  </Button>
-                  <Button startIcon={<DeleteIcon />} onClick={removeSelectedElement} disabled={!selectedElementId}>
-                    Delete Selected
-                  </Button>
-                </ButtonGroup>
-                
+                <Button
+                  startIcon={<DeleteIcon />}
+                  onClick={removeSelectedElement}
+                  disabled={!selectedElementId}
+                  variant="outlined"
+                  fullWidth
+                  size="small"
+                  color="error"
+                >
+                  Delete Selected Element
+                </Button>
+
                 {/* Template Error Display */}
                 {templateError && (
                   <Alert severity="error" sx={{ mt: 2 }} onClose={() => setTemplateError(null)}>
@@ -2927,7 +2871,7 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
               </Box>
             )}
           </Box>
-        </Paper>
+        </Box>
       )}
 
       {/* Data Binding Popup */}
@@ -2948,15 +2892,319 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
         }}
       />
 
+      {/* Signature Picker Dialog */}
+      <SignaturePickerDialog
+        open={showSignaturePickerDialog}
+        onClose={() => setShowSignaturePickerDialog(false)}
+        onSelect={handleSignatureSelect}
+        currentUserId={currentUser?.id}
+      />
+
+      {/* Certificate Templates Modal */}
+      <Dialog
+        open={showTemplatesModal}
+        onClose={() => setShowTemplatesModal(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Typography variant="h6">Certificate Templates</Typography>
+            <IconButton onClick={() => setShowTemplatesModal(false)} size="small">
+              <ClearIcon />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers>
+          <Grid container spacing={2}>
+            {[
+              {
+                key: 'modern-corporate',
+                name: '🏢 Modern Corporate',
+                preview: 'Sleek blue gradient with professional layout, perfect for business achievements and corporate training',
+                gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+              },
+              {
+                key: 'creative-burst',
+                name: '🎨 Creative Burst',
+                preview: 'Vibrant pink-orange gradient with bold typography, ideal for creative achievements and design awards',
+                gradient: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)'
+              },
+              {
+                key: 'nature-fresh',
+                name: '🌿 Nature Fresh',
+                preview: 'Refreshing green-cyan gradient with clean design, perfect for environmental and wellness programs',
+                gradient: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)'
+              },
+              {
+                key: 'golden-premium',
+                name: '👑 Golden Premium',
+                preview: 'Luxurious gold-pink gradient with premium styling, designed for top-tier excellence and VIP recognition',
+                gradient: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)'
+              },
+              {
+                key: 'ocean-depth',
+                name: '🌊 Ocean Depth',
+                preview: 'Deep blue-teal gradient with elegant waves, suitable for maritime, research, and academic excellence',
+                gradient: 'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)'
+              },
+              {
+                key: 'sunset-glow',
+                name: '🌅 Sunset Glow',
+                preview: 'Warm orange-red gradient with modern typography, perfect for leadership and innovation awards',
+                gradient: 'linear-gradient(135deg, #ff6b6b 0%, #ffa726 100%)'
+              }
+            ].map((template, index) => (
+              <Grid item xs={12} sm={6} key={index}>
+                <Card
+                  sx={{
+                    p: 2,
+                    cursor: 'pointer',
+                    '&:hover': {
+                      backgroundColor: 'action.hover',
+                      transform: 'translateY(-2px)',
+                      boxShadow: 3
+                    },
+                    border: '1px solid #e0e0e0',
+                    borderRadius: 2,
+                    transition: 'all 0.2s ease-in-out',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    height: '100%'
+                  }}
+                  onClick={() => {
+                    loadTemplate(template.key);
+                    setShowTemplatesModal(false);
+                  }}
+                >
+                  {/* Gradient Preview Bar */}
+                  <Box
+                    sx={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: 4,
+                      background: template.gradient
+                    }}
+                  />
+
+                  <Typography variant="subtitle2" gutterBottom sx={{ mt: 0.5, fontWeight: 'bold' }}>
+                    {template.name}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.4, display: 'block', mb: 1 }}>
+                    {template.preview}
+                  </Typography>
+
+                  {/* Preview Badge */}
+                  <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <Chip
+                      label="Click to Apply"
+                      size="small"
+                      sx={{
+                        background: template.gradient,
+                        color: 'white',
+                        fontWeight: 'bold'
+                      }}
+                    />
+                  </Box>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowTemplatesModal(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Save Template Dialog */}
+      <Dialog
+        open={showSaveDialog}
+        onClose={() => setShowSaveDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Save Certificate Template</DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 2 }}>
+            <TextField
+              autoFocus
+              fullWidth
+              label="Template Name"
+              value={saveFormData.name}
+              onChange={(e) => setSaveFormData({ ...saveFormData, name: e.target.value })}
+              sx={{ mb: 2 }}
+              required
+              error={!saveFormData.name.trim()}
+              helperText={!saveFormData.name.trim() ? 'Template name is required' : ''}
+            />
+            <TextField
+              fullWidth
+              label="Description (Optional)"
+              value={saveFormData.description}
+              onChange={(e) => setSaveFormData({ ...saveFormData, description: e.target.value })}
+              multiline
+              rows={3}
+              placeholder="Add a description for this template..."
+            />
+
+            {templateError && (
+              <Alert severity="error" sx={{ mt: 2 }}>
+                {templateError}
+              </Alert>
+            )}
+
+            <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+              <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                Template Info:
+              </Typography>
+              <Typography variant="body2">
+                • Elements: {elements.length + imageElements.length}
+              </Typography>
+              <Typography variant="body2">
+                • Canvas Size: {canvasWidth} × {canvasHeight}px
+              </Typography>
+              <Typography variant="body2">
+                • Paper: {paperSize} ({orientation})
+              </Typography>
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowSaveDialog(false)}>Cancel</Button>
+          <Button
+            onClick={handleConfirmSave}
+            variant="contained"
+            disabled={isSavingTemplate || !saveFormData.name.trim()}
+            startIcon={isSavingTemplate ? undefined : <SaveIcon />}
+          >
+            {isSavingTemplate ? 'Saving...' : 'Save Template'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Saved Templates Modal */}
+      <Dialog
+        open={showSavedTemplatesModal}
+        onClose={() => setShowSavedTemplatesModal(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Typography variant="h6">
+              💾 My Saved Templates {isLoadingTemplates ? '(Loading...)' : `(${savedTemplates?.length || 0})`}
+            </Typography>
+            <IconButton onClick={() => setShowSavedTemplatesModal(false)} size="small">
+              <ClearIcon />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers>
+          {/* Loading State */}
+          {isLoadingTemplates && (!savedTemplates || savedTemplates.length === 0) && (
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <Typography variant="body2" color="text.secondary">
+                Loading your templates...
+              </Typography>
+            </Box>
+          )}
+
+          {/* Empty State */}
+          {!isLoadingTemplates && (!savedTemplates || savedTemplates.length === 0) && (
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <Typography variant="body2" color="text.secondary">
+                No saved templates yet. Create and save your first template!
+              </Typography>
+            </Box>
+          )}
+
+          {/* Templates Grid */}
+          {savedTemplates && savedTemplates.length > 0 && (
+            <Grid container spacing={2}>
+              {savedTemplates.map((template) => (
+                <Grid item xs={12} sm={6} key={template.id}>
+                  <Card
+                    sx={{
+                      p: 2,
+                      '&:hover': {
+                        backgroundColor: 'action.hover',
+                        boxShadow: 2
+                      },
+                      transition: 'all 0.2s ease-in-out',
+                      height: '100%',
+                      display: 'flex',
+                      flexDirection: 'column'
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                      <Typography variant="subtitle2" fontWeight="bold">
+                        {template.name}
+                      </Typography>
+                      <Chip
+                        label={`${template.design?.elements?.length || 0} elements`}
+                        size="small"
+                        color="primary"
+                        variant="outlined"
+                      />
+                    </Box>
+
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1, flex: 1 }}>
+                      {template.description || 'No description'}
+                    </Typography>
+
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                      <Typography variant="caption" color="text.secondary">
+                        {new Date(template.created_at).toLocaleDateString()}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {template.design?.canvas?.width || 800}×{template.design?.canvas?.height || 600}px
+                      </Typography>
+                    </Box>
+
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Button
+                        variant="contained"
+                        size="small"
+                        fullWidth
+                        onClick={() => {
+                          loadSavedTemplate(template);
+                          setShowSavedTemplatesModal(false);
+                        }}
+                      >
+                        Load
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        color="error"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteSavedTemplate(template.id);
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    </Box>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowSavedTemplatesModal(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Center - Canvas Area */}
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         {/* Canvas Toolbar */}
         {!isPreviewMode && (
           <Paper sx={{ borderRadius: 0, borderBottom: 1, borderColor: 'divider', backgroundColor: 'white' }}>
             <Toolbar sx={{ gap: 1, minHeight: '48px !important' }}>
-              <Typography variant="subtitle1" sx={{ flexGrow: 1 }}>
-                Certificate Designer
-              </Typography>
+              
               
               <FormControlLabel
                 control={
@@ -3025,6 +3273,18 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
                 />
               </Box>
               
+              <Button
+                variant="contained"
+                color="primary"
+                startIcon={isSavingTemplate ? undefined : <SaveIcon />}
+                onClick={handleSave}
+                disabled={isSavingTemplate}
+                size="small"
+                sx={{ mr: 1 }}
+              >
+                {isSavingTemplate ? 'Saving...' : 'Save'}
+              </Button>
+
               <ButtonGroup size="small">
                 <Button onClick={() => handleExport('pdf')} startIcon={<ExportIcon />}>
                   PDF
@@ -3121,7 +3381,28 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
                 .sort((a, b) => a.zIndex - b.zIndex)
                 .map((element) => {
                   if (element.elementType === 'text') {
-                    return renderTemplateVariable(element as TemplateVariableElement);
+                    return (
+                      <TextElement
+                        key={element.id}
+                        element={element as TemplateVariableElement}
+                        isSelected={selectedElementId === element.id}
+                        isPreviewMode={isPreviewMode}
+                        onSelect={handleElementSelect}
+                        onUpdate={(id, updates) => {
+                          setElements(prev => prev.map(el =>
+                            el.id === id ? { ...el, ...updates } : el
+                          ));
+                        }}
+                        onDelete={(id) => {
+                          setElements(prev => prev.filter(el => el.id !== id));
+                          if (selectedElementId === id) {
+                            setSelectedElementId(null);
+                          }
+                        }}
+                        onDoubleClick={handleTextDoubleClick}
+                        onContextMenu={handleContextMenu}
+                      />
+                    );
                   } else {
                     return (
                       <ImageElement
@@ -3148,8 +3429,15 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
 
       {/* Right Properties Panel */}
       {!isPreviewMode && (
-        <Paper sx={{ width: 320, borderRadius: 0, borderLeft: 1, borderColor: 'divider', backgroundColor: 'white' }}>
-          <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
+        <Box sx={{
+          width: 320,
+          borderLeft: 1,
+          borderColor: 'divider',
+          backgroundColor: 'white',
+          overflowY: 'auto',
+          overflowX: 'hidden'
+        }}>
+          <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', position: 'sticky', top: 0, backgroundColor: 'white', zIndex: 1 }}>
             <Typography variant="h6" gutterBottom>
               ⚙️ Properties
             </Typography>
@@ -3158,7 +3446,7 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
             </Typography>
           </Box>
 
-          <Box sx={{ p: 2, height: 'calc(100% - 80px)', overflow: 'auto' }}>
+          <Box sx={{ p: 2 }}>
             {selectedElementId ? (() => {
               // Find element in either text elements or image elements
               const textElement = elements.find(el => el.id === selectedElementId);
@@ -3194,7 +3482,7 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
               </Box>
             )}
           </Box>
-        </Paper>
+        </Box>
       )}
 
       {/* Context Menu */}

@@ -50,7 +50,8 @@ const DashboardPage: React.FC = () => {
 
   useEffect(() => {
     const fetchDashboardData = async () => {
-      if (!user || user.role === 'student') {
+      const userRoleName = user?.role?.name || '';
+      if (!user || userRoleName === 'student') {
         setLoading(false);
         return;
       }
@@ -60,7 +61,7 @@ const DashboardPage: React.FC = () => {
 
         // Fetch based on user role
         let stats: DashboardStatistics | any;
-        if (user.role === 'admin' || user.role === 'super_admin') {
+        if (userRoleName === 'admin' || userRoleName === 'super_admin') {
           // Fetch admin dashboard data from Analytics API
           const [overview, metrics] = await Promise.all([
             analyticsService.getDashboardOverview(),
@@ -76,10 +77,10 @@ const DashboardPage: React.FC = () => {
           } catch (e) {
             console.warn('Old statistics API not available:', e);
           }
-        } else if (user.role === 'staff') {
+        } else if (userRoleName === 'staff') {
           stats = await statisticsService.getStaffDashboardStatistics();
           setDashboardStats(stats);
-        } else if (user.role === 'signer') {
+        } else if (userRoleName === 'signer') {
           stats = await statisticsService.getSignerDashboardStatistics();
           setDashboardStats(stats);
         }

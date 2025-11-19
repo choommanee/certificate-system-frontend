@@ -94,10 +94,10 @@ const UnauthorizedPage: React.FC = () => {
                     mb: 4
                   }}
                 >
-                  บทบาทปัจจุบัน: {user.role === 'admin' ? 'ผู้ดูแลระบบ' : 
-                                   user.role === 'staff' ? 'เจ้าหน้าที่' :
-                                   user.role === 'signer' ? 'อาจารย์ผู้ลงนาม' :
-                                   user.role === 'student' ? 'นักศึกษา' : 'บุคคลทั่วไป'}
+                  บทบาทปัจจุบัน: {user.role?.name === 'admin' ? 'ผู้ดูแลระบบ' :
+                                   user.role?.name === 'staff' ? 'เจ้าหน้าที่' :
+                                   user.role?.name === 'signer' ? 'อาจารย์ผู้ลงนาม' :
+                                   user.role?.name === 'student' ? 'นักศึกษา' : 'บุคคลทั่วไป'}
                 </Typography>
               )}
 

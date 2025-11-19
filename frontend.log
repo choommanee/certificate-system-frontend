@@ -1,0 +1,18 @@
+
+> certificate-system@0.1.0 start
+> vite
+
+
+  VITE v7.1.6  ready in 185 ms
+
+  ➜  Local:   http://localhost:3001/
+  ➜  Network: use --host to expose
+1:10:46 AM [vite] (client) hmr update /src/pages/admin/AdminDashboardPage.tsx
+1:13:10 AM [vite] (client) hmr update /src/pages/ActivityCreatePage.tsx, /src/pages/ActivityListPage.tsx, /src/pages/admin/AdminDashboardPage.tsx
+1:13:17 AM [vite] (client) hmr update /src/pages/ActivityCreatePage.tsx, /src/pages/ActivityListPage.tsx, /src/pages/admin/AdminDashboardPage.tsx
+8:22:30 AM [vite] (client) hmr update /src/contexts/AuthContext.tsx, /src/pages/DesignerTestPage.tsx, /src/pages/FixedDesignerTestPage.tsx, /src/pages/ApiTestPage.tsx
+8:22:30 AM [vite] (client) hmr invalidate /src/contexts/AuthContext.tsx Could not Fast Refresh ("useAuth" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+8:22:30 AM [vite] (client) hmr update /src/App.tsx, /src/pages/LandingPage.tsx, /src/pages/LoginPage.tsx, /src/pages/CertificateListPage.tsx, /src/pages/CertificateDetailPage.tsx, /src/pages/CertificateEditPage.tsx, /src/pages/CertificateCreatePage.tsx, /src/pages/ApprovalPage.tsx, /src/pages/UserCreatePage.tsx, /src/pages/UserListPage.tsx, /src/pages/NotificationSettingsPage.tsx, /src/pages/UserProfilePage.tsx, /src/pages/SystemSettingsPage.tsx, /src/pages/UnauthorizedPage.tsx, /src/pages/SystemStatusPage.tsx, /src/pages/TemplateListPage.tsx, /src/pages/TemplateCreatePage.tsx, /src/pages/TemplateDetailPage.tsx, /src/components/common/RoleBasedDashboard.tsx, /src/components/common/ProtectedRoute.tsx, /src/pages/PendingApprovalsPage.tsx, /src/components/dashboard/DashboardLayout.tsx, /src/pages/SignerDashboardPage.tsx, /src/pages/student/StudentDashboardPage.tsx, /src/pages/admin/AdminDashboardPage.tsx, /src/pages/staff/StaffDashboardPage.tsx, /src/components/signer/SignerDashboardLayout.tsx, /src/components/signer/SignerNavigationMenu.tsx
+8:26:29 AM [vite] (client) hmr update /src/pages/ActivityCreatePage.tsx, /src/pages/ActivityListPage.tsx, /src/pages/admin/AdminDashboardPage.tsx
+8:26:44 AM [vite] (client) hmr update /src/pages/admin/AdminDashboardPage.tsx
+8:27:00 AM [vite] (client) hmr update /src/pages/admin/AdminDashboardPage.tsx

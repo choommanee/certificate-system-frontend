@@ -18,7 +18,8 @@ export const SIGNER_PERMISSIONS = {
 export class SignerAuthValidator {
   static validateSignerAccess(user: User | null): boolean {
     if (!user) return false;
-    return user.role === 'signer' || user.role === 'admin';
+    const roleName = typeof user.role === 'string' ? user.role : user.role?.name;
+    return roleName === 'signer' || roleName === 'admin';
   }
 
   static validateDocumentAccess(
@@ -41,7 +42,8 @@ export class SignerAuthValidator {
     if (!this.validateSignerAccess(user)) return false;
 
     // Users can only manage their own signatures (unless admin)
-    if (user?.role !== 'admin' && user?.id !== signatureUserId) {
+    const roleName = typeof user?.role === 'string' ? user?.role : user?.role?.name;
+    if (roleName !== 'admin' && user?.id !== signatureUserId) {
       return false;
     }
 

@@ -43,6 +43,7 @@ import {
   CancelOutlined,
   Send,
   Timeline,
+  Schedule,
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -94,6 +95,13 @@ const PendingApprovalsPage: React.FC = () => {
       setStatistics(stats);
     } catch (err) {
       console.error('Failed to load statistics:', err);
+      // Use default statistics if API fails
+      setStatistics({
+        total_pending: certificates.filter(c => c.status === 'pending').length,
+        total_approved: 0,
+        total_rejected: 0,
+        avg_approval_time: 0,
+      });
     }
   };
 
@@ -191,7 +199,7 @@ const PendingApprovalsPage: React.FC = () => {
   });
 
   // Check if user can approve
-  const canApprove = certificateApprovalService.canApprove(user?.role || '');
+  const canApprove = certificateApprovalService.canApprove(user?.role?.name || '');
 
   if (!canApprove) {
     return (

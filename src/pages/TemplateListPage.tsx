@@ -30,6 +30,8 @@ import {
   CardMedia,
   CardActions,
   LinearProgress,
+  Snackbar,
+  Divider,
 } from '@mui/material';
 import {
   Add,
@@ -51,29 +53,10 @@ import {
   Lock,
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
-
-interface Template {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  thumbnail_url?: string;
-  created_by: string;
-  created_at: string;
-  updated_at: string;
-  usage_count: number;
-  is_public: boolean;
-  is_favorite: boolean;
-  status: 'draft' | 'published' | 'archived';
-  tags: string[];
-  file_size: number;
-  dimensions: {
-    width: number;
-    height: number;
-  };
-}
+import { templateService } from '../services/api/templateService';
+import type { Template } from '../services/api/types';
 
 interface TemplateStats {
   total_templates: number;
@@ -86,10 +69,12 @@ interface TemplateStats {
 const TemplateListPage: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [stats, setStats] = useState<TemplateStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
+  const [successMessage, setSuccessMessage] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -99,124 +84,105 @@ const TemplateListPage: React.FC = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false);
   const [duplicateName, setDuplicateName] = useState('');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalTemplates, setTotalTemplates] = useState(0);
 
-  // Mock data
-  const mockTemplates: Template[] = [
-    {
-      id: '1',
-      name: 'เทมเพลตสัมมนาพื้นฐาน',
-      description: 'เทมเพลตสำหรับเกียรติบัตรการเข้าร่วมสัมมนาทั่วไป',
-      category: 'สัมมนา',
-      thumbnail_url: '',
-      created_by: 'staff@example.com',
-      created_at: '2024-01-15T10:00:00Z',
-      updated_at: '2024-02-20T14:30:00Z',
-      usage_count: 45,
-      is_public: true,
-      is_favorite: true,
-      status: 'published',
-      tags: ['สัมมนา', 'พื้นฐาน', 'ทั่วไป'],
-      file_size: 2.5,
-      dimensions: { width: 1920, height: 1080 }
-    },
-    {
-      id: '2',
-      name: 'เทมเพลตฝึกอบรมขั้นสูง',
-      description: 'เทมเพลตสำหรับเกียรติบัตรการฝึกอบรมเชิงลึก',
-      category: 'ฝึกอบรม',
-      thumbnail_url: '',
-      created_by: 'admin@example.com',
-      created_at: '2024-02-01T09:00:00Z',
-      updated_at: '2024-03-10T16:45:00Z',
-      usage_count: 32,
-      is_public: true,
-      is_favorite: false,
-      status: 'published',
-      tags: ['ฝึกอบรม', 'ขั้นสูง', 'เชิงลึก'],
-      file_size: 3.2,
-      dimensions: { width: 1920, height: 1080 }
-    },
-    {
-      id: '3',
-      name: 'เทมเพลตการแข่งขันนักศึกษา',
-      description: 'เทมเพลตสำหรับเกียรติบัตรการแข่งขันระดับมหาวิทยาลัย',
-      category: 'การแข่งขัน',
-      thumbnail_url: '',
-      created_by: 'staff@example.com',
-      created_at: '2024-02-15T11:30:00Z',
-      updated_at: '2024-02-15T11:30:00Z',
-      usage_count: 18,
-      is_public: false,
-      is_favorite: true,
-      status: 'published',
-      tags: ['การแข่งขัน', 'นักศึกษา', 'มหาวิทยาลัย'],
-      file_size: 4.1,
-      dimensions: { width: 1920, height: 1080 }
-    },
-    {
-      id: '4',
-      name: 'เทมเพลตจบการศึกษา',
-      description: 'เทมเพลตสำหรับเกียรติบัตรการสำเร็จการศึกษา',
-      category: 'การศึกษา',
-      thumbnail_url: '',
-      created_by: 'admin@example.com',
-      created_at: '2024-03-01T08:00:00Z',
-      updated_at: '2024-03-01T08:00:00Z',
-      usage_count: 8,
-      is_public: true,
-      is_favorite: false,
-      status: 'draft',
-      tags: ['การศึกษา', 'จบการศึกษา', 'ปริญญา'],
-      file_size: 5.7,
-      dimensions: { width: 1920, height: 1080 }
+  // Fetch templates from API
+  const fetchTemplates = async () => {
+    setLoading(true);
+    setError('');
+
+    try {
+      const params: any = {
+        page,
+        limit: 12,
+      };
+
+      if (searchTerm) {
+        params.search = searchTerm;
+      }
+
+      if (categoryFilter && categoryFilter !== 'all') {
+        params.category = categoryFilter;
+      }
+
+      if (statusFilter && statusFilter !== 'all') {
+        const statusMap: { [key: string]: boolean } = {
+          'published': true,
+          'draft': false,
+        };
+        if (statusFilter in statusMap) {
+          params.isActive = statusMap[statusFilter];
+        }
+      }
+
+      const response = await templateService.getTemplates(params);
+
+      if (response.success && response.data) {
+        setTemplates(response.data.data);
+        setTotalPages(response.data.totalPages);
+        setTotalTemplates(response.data.total);
+
+        // Calculate stats from loaded data
+        const activeTemplates = response.data.data.filter((t: Template) => t.isActive);
+        const inactiveTemplates = response.data.data.filter((t: Template) => !t.isActive);
+        const totalUsage = response.data.data.reduce((sum: number, t: Template) => sum + (t.usageCount || 0), 0);
+        const mostUsed = response.data.data.reduce((prev: Template | null, curr: Template) =>
+          !prev || (curr.usageCount || 0) > (prev.usageCount || 0) ? curr : prev, null as Template | null
+        );
+
+        setStats({
+          total_templates: response.data.total,
+          published_templates: activeTemplates.length,
+          draft_templates: inactiveTemplates.length,
+          most_used_template: mostUsed?.name || '-',
+          total_usage: totalUsage
+        });
+      }
+    } catch (err: any) {
+      console.error('Error fetching templates:', err);
+      setError(err.response?.data?.message || err.message || 'เกิดข้อผิดพลาดในการโหลดข้อมูล');
+    } finally {
+      setLoading(false);
     }
-  ];
-
-  const mockStats: TemplateStats = {
-    total_templates: 4,
-    published_templates: 3,
-    draft_templates: 1,
-    most_used_template: 'เทมเพลตสัมมนาพื้นฐาน',
-    total_usage: 103
   };
 
   useEffect(() => {
-    // Simulate API call
-    setTimeout(() => {
-      setTemplates(mockTemplates);
-      setStats(mockStats);
-      setLoading(false);
-    }, 1000);
-  }, []);
+    fetchTemplates();
+  }, [page, categoryFilter, statusFilter]);
+
+  // Handle search with debounce
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (page === 1) {
+        fetchTemplates();
+      } else {
+        setPage(1);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // Show success message from navigation state
+  useEffect(() => {
+    if (location.state && location.state.message) {
+      setSuccessMessage(location.state.message);
+      // Clear the message from state
+      window.history.replaceState({}, document.title);
+    }
+  }, [location]);
 
   const categories = ['สัมมนา', 'ฝึกอบรม', 'การแข่งขัน', 'การศึกษา', 'อื่นๆ'];
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'published': return 'success';
-      case 'draft': return 'warning';
-      case 'archived': return 'default';
-      default: return 'default';
-    }
+  const getStatusColor = (isActive: boolean) => {
+    return isActive ? 'success' : 'warning';
   };
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'published': return 'เผยแพร่แล้ว';
-      case 'draft': return 'ร่าง';
-      case 'archived': return 'เก็บถาวร';
-      default: return status;
-    }
+  const getStatusText = (isActive: boolean) => {
+    return isActive ? 'เผยแพร่แล้ว' : 'ร่าง';
   };
-
-  const filteredTemplates = templates.filter(template => {
-    const matchesSearch = template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         template.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         template.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchesCategory = categoryFilter === 'all' || template.category === categoryFilter;
-    const matchesStatus = statusFilter === 'all' || template.status === statusFilter;
-    return matchesSearch && matchesCategory && matchesStatus;
-  });
 
   const handleMenuClick = (event: React.MouseEvent<HTMLElement>, template: Template) => {
     setAnchorEl(event.currentTarget);
@@ -250,13 +216,24 @@ const TemplateListPage: React.FC = () => {
     handleMenuClose();
   };
 
-  const confirmDuplicate = () => {
+  const confirmDuplicate = async () => {
     if (selectedTemplate && duplicateName) {
-      // TODO: Duplicate template via API
-      console.log('Duplicating template:', selectedTemplate.id, 'with name:', duplicateName);
-      setDuplicateDialogOpen(false);
-      setDuplicateName('');
-      setSelectedTemplate(null);
+      try {
+        setLoading(true);
+        const response = await templateService.cloneTemplate(selectedTemplate.id, duplicateName);
+
+        if (response.success) {
+          setSuccessMessage('ทำสำเนาเทมเพลตสำเร็จ');
+          fetchTemplates(); // Refresh the list
+        }
+      } catch (err: any) {
+        setError(err.response?.data?.message || 'เกิดข้อผิดพลาดในการทำสำเนาเทมเพลต');
+      } finally {
+        setLoading(false);
+        setDuplicateDialogOpen(false);
+        setDuplicateName('');
+        setSelectedTemplate(null);
+      }
     }
   };
 
@@ -265,32 +242,41 @@ const TemplateListPage: React.FC = () => {
     handleMenuClose();
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (selectedTemplate) {
-      setTemplates(prev => prev.filter(t => t.id !== selectedTemplate.id));
-      setDeleteDialogOpen(false);
-      setSelectedTemplate(null);
+      try {
+        setLoading(true);
+        const response = await templateService.deleteTemplate(selectedTemplate.id);
+
+        if (response.success) {
+          setSuccessMessage('ลบเทมเพลตสำเร็จ');
+          fetchTemplates(); // Refresh the list
+        }
+      } catch (err: any) {
+        setError(err.response?.data?.message || 'เกิดข้อผิดพลาดในการลบเทมเพลต');
+      } finally {
+        setLoading(false);
+        setDeleteDialogOpen(false);
+        setSelectedTemplate(null);
+      }
     }
   };
 
-  const handleToggleFavorite = (templateId: string) => {
-    setTemplates(prev => 
-      prev.map(t => 
-        t.id === templateId 
-          ? { ...t, is_favorite: !t.is_favorite }
-          : t
-      )
-    );
-  };
+  const handleTogglePublic = async (template: Template) => {
+    try {
+      const response = await templateService.togglePublic(template.id, !template.isPublic);
 
-  const handleTogglePublic = (templateId: string) => {
-    setTemplates(prev => 
-      prev.map(t => 
-        t.id === templateId 
-          ? { ...t, is_public: !t.is_public }
-          : t
-      )
-    );
+      if (response.success) {
+        setTemplates(prev =>
+          prev.map(t =>
+            t.id === template.id ? { ...t, isPublic: !t.isPublic } : t
+          )
+        );
+        setSuccessMessage(`เปลี่ยนสถานะเป็น${!template.isPublic ? 'สาธารณะ' : 'ส่วนตัว'}แล้ว`);
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'เกิดข้อผิดพลาดในการเปลี่ยนสถานะ');
+    }
   };
 
   const canCreateTemplate = user?.role === 'staff' || user?.role === 'admin';
@@ -299,7 +285,7 @@ const TemplateListPage: React.FC = () => {
 
   const renderGridView = () => (
     <Grid container spacing={3}>
-      {filteredTemplates.map((template) => (
+      {templates.map((template) => (
         <Grid item xs={12} sm={6} md={4} lg={3} key={template.id}>
           <Card
             sx={{
@@ -318,19 +304,24 @@ const TemplateListPage: React.FC = () => {
             <Box
               sx={{
                 height: 200,
-                bgcolor: 'grey.100',
+                bgcolor: template.backgroundColor || 'grey.100',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                position: 'relative'
+                position: 'relative',
+                backgroundImage: template.backgroundImageUrl ? `url(${template.backgroundImageUrl})` : 'none',
+                backgroundSize: 'cover',
+                backgroundPosition: 'center'
               }}
             >
-              <Description sx={{ fontSize: 64, color: 'text.secondary' }} />
-              
+              {!template.backgroundImageUrl && (
+                <Description sx={{ fontSize: 64, color: 'text.secondary' }} />
+              )}
+
               {/* Status Badge */}
               <Chip
-                label={getStatusText(template.status)}
-                color={getStatusColor(template.status) as any}
+                label={getStatusText(template.isActive)}
+                color={getStatusColor(template.isActive) as any}
                 size="small"
                 sx={{
                   position: 'absolute',
@@ -339,14 +330,9 @@ const TemplateListPage: React.FC = () => {
                 }}
               />
 
-              {/* Favorite & Public Icons */}
+              {/* Public Icon */}
               <Box sx={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 0.5 }}>
-                {template.is_favorite && (
-                  <Avatar sx={{ width: 24, height: 24, bgcolor: 'warning.main' }}>
-                    <Star sx={{ fontSize: 16 }} />
-                  </Avatar>
-                )}
-                {template.is_public ? (
+                {template.isPublic ? (
                   <Avatar sx={{ width: 24, height: 24, bgcolor: 'success.main' }}>
                     <Public sx={{ fontSize: 16 }} />
                   </Avatar>
@@ -371,7 +357,7 @@ const TemplateListPage: React.FC = () => {
                   fontSize: '0.75rem'
                 }}
               >
-                ใช้งาน {template.usage_count} ครั้ง
+                ใช้งาน {template.usageCount || 0} ครั้ง
               </Box>
             </Box>
 
@@ -379,38 +365,33 @@ const TemplateListPage: React.FC = () => {
               <Typography variant="h6" gutterBottom noWrap>
                 {template.name}
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                {template.description}
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical'
+              }}>
+                {template.description || 'ไม่มีคำอธิบาย'}
               </Typography>
-              
+
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1 }}>
-                <Chip label={template.category} size="small" color="primary" variant="outlined" />
-                {template.tags.slice(0, 2).map((tag) => (
-                  <Chip key={tag} label={tag} size="small" variant="outlined" />
-                ))}
-                {template.tags.length > 2 && (
-                  <Chip label={`+${template.tags.length - 2}`} size="small" variant="outlined" />
+                {template.category && (
+                  <Chip label={template.category} size="small" color="primary" variant="outlined" />
                 )}
               </Box>
 
               <Typography variant="caption" color="text.secondary">
-                สร้างโดย: {template.created_by}
+                สร้างโดย: {template.createdBy || 'ไม่ระบุ'}
               </Typography>
               <br />
               <Typography variant="caption" color="text.secondary">
-                ขนาด: {template.file_size} MB • {template.dimensions.width}x{template.dimensions.height}
+                ขนาด: {template.width}x{template.height} px
               </Typography>
             </CardContent>
 
             <CardActions sx={{ justifyContent: 'space-between', px: 2, pb: 2 }}>
               <Box sx={{ display: 'flex', gap: 0.5 }}>
-                <IconButton
-                  size="small"
-                  onClick={() => handleToggleFavorite(template.id)}
-                  color={template.is_favorite ? 'warning' : 'default'}
-                >
-                  {template.is_favorite ? <Star /> : <StarBorder />}
-                </IconButton>
                 <IconButton
                   size="small"
                   onClick={() => navigate(`/templates/${template.id}`)}
@@ -434,39 +415,40 @@ const TemplateListPage: React.FC = () => {
   const renderListView = () => (
     <Card>
       <CardContent>
-        {filteredTemplates.map((template, index) => (
+        {templates.map((template, index) => (
           <Box key={template.id}>
             <Box sx={{ display: 'flex', alignItems: 'center', py: 2 }}>
               <Avatar sx={{ mr: 2, bgcolor: 'primary.main' }}>
                 <Description />
               </Avatar>
-              
+
               <Box sx={{ flexGrow: 1 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
                   <Typography variant="subtitle1" fontWeight={600}>
                     {template.name}
                   </Typography>
                   <Chip
-                    label={getStatusText(template.status)}
-                    color={getStatusColor(template.status) as any}
+                    label={getStatusText(template.isActive)}
+                    color={getStatusColor(template.isActive) as any}
                     size="small"
                     variant="outlined"
                   />
-                  {template.is_favorite && <Star color="warning" sx={{ fontSize: 16 }} />}
-                  {template.is_public ? <Public color="success" sx={{ fontSize: 16 }} /> : <Lock color="disabled" sx={{ fontSize: 16 }} />}
+                  {template.isPublic ? <Public color="success" sx={{ fontSize: 16 }} /> : <Lock color="disabled" sx={{ fontSize: 16 }} />}
                 </Box>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                  {template.description}
+                  {template.description || 'ไม่มีคำอธิบาย'}
                 </Typography>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  {template.category && (
+                    <Typography variant="caption" color="text.secondary">
+                      หมวดหมู่: {template.category}
+                    </Typography>
+                  )}
                   <Typography variant="caption" color="text.secondary">
-                    หมวดหมู่: {template.category}
+                    ใช้งาน: {template.usageCount || 0} ครั้ง
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    ใช้งาน: {template.usage_count} ครั้ง
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    ขนาด: {template.file_size} MB
+                    ขนาด: {template.width}x{template.height} px
                   </Typography>
                 </Box>
               </Box>
@@ -487,7 +469,7 @@ const TemplateListPage: React.FC = () => {
                 </IconButton>
               </Box>
             </Box>
-            {index < filteredTemplates.length - 1 && <Divider />}
+            {index < templates.length - 1 && <Divider />}
           </Box>
         ))}
       </CardContent>
@@ -535,6 +517,18 @@ const TemplateListPage: React.FC = () => {
             {error}
           </Alert>
         )}
+
+        {/* Success Snackbar */}
+        <Snackbar
+          open={!!successMessage}
+          autoHideDuration={6000}
+          onClose={() => setSuccessMessage('')}
+          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        >
+          <Alert onClose={() => setSuccessMessage('')} severity="success" sx={{ width: '100%' }}>
+            {successMessage}
+          </Alert>
+        </Snackbar>
 
         {/* Stats Cards */}
         <Grid container spacing={2} sx={{ mb: 3 }}>
@@ -668,8 +662,40 @@ const TemplateListPage: React.FC = () => {
           </CardContent>
         </Card>
 
+        {/* Loading Progress */}
+        {loading && (
+          <Box sx={{ mb: 3 }}>
+            <LinearProgress />
+          </Box>
+        )}
+
         {/* Templates Display */}
-        {viewMode === 'grid' ? renderGridView() : renderListView()}
+        {!loading && templates.length === 0 ? (
+          <Card>
+            <CardContent sx={{ textAlign: 'center', py: 8 }}>
+              <Description sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+              <Typography variant="h6" color="text.secondary" gutterBottom>
+                ไม่พบเทมเพลต
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                {searchTerm || categoryFilter !== 'all' || statusFilter !== 'all'
+                  ? 'ไม่พบเทมเพลตที่ตรงกับเงื่อนไขการค้นหา'
+                  : 'ยังไม่มีเทมเพลตในระบบ'}
+              </Typography>
+              {canCreateTemplate && (
+                <Button
+                  variant="contained"
+                  startIcon={<Add />}
+                  onClick={() => navigate('/templates/create')}
+                >
+                  สร้างเทมเพลตแรก
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          viewMode === 'grid' ? renderGridView() : renderListView()
+        )}
 
         {/* Action Menu */}
         <Menu

@@ -30,6 +30,8 @@ import {
   TableHead,
   TableRow,
   LinearProgress,
+  Snackbar,
+  TextField,
 } from '@mui/material';
 import {
   ArrowBack,
@@ -56,59 +58,8 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, useParams } from 'react-router-dom';
 import DashboardLayout from '../components/dashboard/DashboardLayout';
-
-interface Template {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  thumbnail_url?: string;
-  created_by: string;
-  created_at: string;
-  updated_at: string;
-  usage_count: number;
-  is_public: boolean;
-  is_favorite: boolean;
-  status: 'draft' | 'published' | 'archived';
-  tags: string[];
-  file_size: number;
-  dimensions: {
-    width: number;
-    height: number;
-  };
-  canvas: {
-    background_color: string;
-    background_image?: string;
-  };
-  elements: TemplateElement[];
-  variables: TemplateVariable[];
-  usage_history: UsageHistory[];
-}
-
-interface TemplateElement {
-  id: string;
-  type: 'text' | 'image' | 'shape' | 'qr_code';
-  position: { x: number; y: number };
-  size: { width: number; height: number };
-  style: any;
-  content: any;
-}
-
-interface TemplateVariable {
-  name: string;
-  type: 'text' | 'date' | 'number';
-  default_value: string;
-  required: boolean;
-  description: string;
-}
-
-interface UsageHistory {
-  id: string;
-  certificate_name: string;
-  recipient_name: string;
-  created_by: string;
-  created_at: string;
-}
+import { templateService } from '../services/api/templateService';
+import type { Template } from '../services/api/types';
 
 const TemplateDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -117,120 +68,43 @@ const TemplateDetailPage: React.FC = () => {
   const [template, setTemplate] = useState<Template | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
+  const [successMessage, setSuccessMessage] = useState<string>('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false);
+  const [duplicateName, setDuplicateName] = useState('');
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
-  // Mock data
-  const mockTemplate: Template = {
-    id: '1',
-    name: 'เทมเพลตสัมมนาพื้นฐาน',
-    description: 'เทมเพลตสำหรับเกียรติบัตรการเข้าร่วมสัมมนาทั่วไป ออกแบบมาให้ใช้งานง่ายและสวยงาม',
-    category: 'สัมมนา',
-    thumbnail_url: '',
-    created_by: 'staff@example.com',
-    created_at: '2024-01-15T10:00:00Z',
-    updated_at: '2024-02-20T14:30:00Z',
-    usage_count: 45,
-    is_public: true,
-    is_favorite: true,
-    status: 'published',
-    tags: ['สัมมนา', 'พื้นฐาน', 'ทั่วไป'],
-    file_size: 2.5,
-    dimensions: { width: 1920, height: 1080 },
-    canvas: {
-      background_color: '#ffffff',
-    },
-    elements: [
-      {
-        id: '1',
-        type: 'text',
-        position: { x: 100, y: 100 },
-        size: { width: 400, height: 60 },
-        style: { fontSize: 24, fontWeight: 'bold', color: '#333' },
-        content: { text: 'เกียรติบัตร' }
-      },
-      {
-        id: '2',
-        type: 'text',
-        position: { x: 100, y: 200 },
-        size: { width: 300, height: 40 },
-        style: { fontSize: 18, color: '#666' },
-        content: { text: '{{recipient_name}}' }
+  // Fetch template details
+  const fetchTemplate = async () => {
+    if (!id) return;
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const response = await templateService.getTemplate(id);
+
+      if (response.success && response.data) {
+        setTemplate(response.data);
       }
-    ],
-    variables: [
-      {
-        name: 'recipient_name',
-        type: 'text',
-        default_value: 'ชื่อผู้รับ',
-        required: true,
-        description: 'ชื่อผู้รับเกียรติบัตร'
-      },
-      {
-        name: 'course_name',
-        type: 'text',
-        default_value: 'ชื่อหลักสูตร',
-        required: true,
-        description: 'ชื่อหลักสูตรหรือกิจกรรม'
-      },
-      {
-        name: 'issue_date',
-        type: 'date',
-        default_value: '2024-01-01',
-        required: true,
-        description: 'วันที่ออกเกียรติบัตร'
-      }
-    ],
-    usage_history: [
-      {
-        id: '1',
-        certificate_name: 'เกียรติบัตรสัมมนาเศรษฐกิจดิจิทัล',
-        recipient_name: 'นายสมชาย ใจดี',
-        created_by: 'staff@example.com',
-        created_at: '2024-03-20T10:00:00Z'
-      },
-      {
-        id: '2',
-        certificate_name: 'เกียรติบัตรสัมมนาการลงทุน',
-        recipient_name: 'นางสาวสุดา เก่งมาก',
-        created_by: 'staff@example.com',
-        created_at: '2024-03-19T15:30:00Z'
-      },
-      {
-        id: '3',
-        certificate_name: 'เกียรติบัตรสัมมนาการตลาด',
-        recipient_name: 'นายวิชัย ชนะเลิศ',
-        created_by: 'admin@example.com',
-        created_at: '2024-03-18T09:15:00Z'
-      }
-    ]
+    } catch (err: any) {
+      console.error('Error fetching template:', err);
+      setError(err.response?.data?.message || err.message || 'เกิดข้อผิดพลาดในการโหลดข้อมูล');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
-    // Simulate API call
-    setTimeout(() => {
-      setTemplate(mockTemplate);
-      setLoading(false);
-    }, 1000);
+    fetchTemplate();
   }, [id]);
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'published': return 'success';
-      case 'draft': return 'warning';
-      case 'archived': return 'default';
-      default: return 'default';
-    }
+  const getStatusColor = (isActive: boolean) => {
+    return isActive ? 'success' : 'warning';
   };
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'published': return 'เผยแพร่แล้ว';
-      case 'draft': return 'ร่าง';
-      case 'archived': return 'เก็บถาวร';
-      default: return status;
-    }
+  const getStatusText = (isActive: boolean) => {
+    return isActive ? 'เผยแพร่แล้ว' : 'ร่าง';
   };
 
   const handleEdit = () => {
@@ -238,46 +112,69 @@ const TemplateDetailPage: React.FC = () => {
   };
 
   const handleDuplicate = () => {
-    setDuplicateDialogOpen(true);
+    if (template) {
+      setDuplicateName(`${template.name} (สำเนา)`);
+      setDuplicateDialogOpen(true);
+    }
   };
 
-  const confirmDuplicate = () => {
-    // TODO: Duplicate template via API
-    console.log('Duplicating template:', id);
-    setDuplicateDialogOpen(false);
-    navigate('/templates', {
-      state: { message: 'ทำสำเนาเทมเพลตสำเร็จ' }
-    });
+  const confirmDuplicate = async () => {
+    if (!id || !duplicateName) return;
+
+    try {
+      setLoading(true);
+      const response = await templateService.cloneTemplate(id, duplicateName);
+
+      if (response.success) {
+        navigate('/templates', {
+          state: { message: 'ทำสำเนาเทมเพลตสำเร็จ' }
+        });
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'เกิดข้อผิดพลาดในการทำสำเนาเทมเพลต');
+    } finally {
+      setLoading(false);
+      setDuplicateDialogOpen(false);
+      setDuplicateName('');
+    }
   };
 
   const handleDelete = () => {
     setDeleteDialogOpen(true);
   };
 
-  const confirmDelete = () => {
-    // TODO: Delete template via API
-    console.log('Deleting template:', id);
-    setDeleteDialogOpen(false);
-    navigate('/templates', {
-      state: { message: 'ลบเทมเพลตสำเร็จ' }
-    });
-  };
+  const confirmDelete = async () => {
+    if (!id) return;
 
-  const handleToggleFavorite = () => {
-    if (template) {
-      setTemplate({
-        ...template,
-        is_favorite: !template.is_favorite
-      });
+    try {
+      setLoading(true);
+      const response = await templateService.deleteTemplate(id);
+
+      if (response.success) {
+        navigate('/templates', {
+          state: { message: 'ลบเทมเพลตสำเร็จ' }
+        });
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'เกิดข้อผิดพลาดในการลบเทมเพลต');
+      setDeleteDialogOpen(false);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleTogglePublic = () => {
-    if (template) {
-      setTemplate({
-        ...template,
-        is_public: !template.is_public
-      });
+  const handleTogglePublic = async () => {
+    if (!template || !id) return;
+
+    try {
+      const response = await templateService.togglePublic(id, !template.isPublic);
+
+      if (response.success && response.data) {
+        setTemplate(response.data);
+        setSuccessMessage(`เปลี่ยนสถานะเป็น${!template.isPublic ? 'สาธารณะ' : 'ส่วนตัว'}แล้ว`);
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'เกิดข้อผิดพลาดในการเปลี่ยนสถานะ');
     }
   };
 
@@ -335,36 +232,21 @@ const TemplateDetailPage: React.FC = () => {
               </Typography>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <Chip
-                  label={getStatusText(template.status)}
-                  color={getStatusColor(template.status) as any}
+                  label={getStatusText(template.isActive)}
+                  color={getStatusColor(template.isActive) as any}
                   variant="outlined"
                 />
                 <Chip
-                  icon={template.is_public ? <Public /> : <Lock />}
-                  label={template.is_public ? 'สาธารณะ' : 'ส่วนตัว'}
-                  color={template.is_public ? 'success' : 'default'}
+                  icon={template.isPublic ? <Public /> : <Lock />}
+                  label={template.isPublic ? 'สาธารณะ' : 'ส่วนตัว'}
+                  color={template.isPublic ? 'success' : 'default'}
                   variant="outlined"
                 />
-                {template.is_favorite && (
-                  <Chip
-                    icon={<Star />}
-                    label="รายการโปรด"
-                    color="warning"
-                    variant="outlined"
-                  />
-                )}
               </Box>
             </Box>
           </Box>
 
           <Box sx={{ display: 'flex', gap: 1 }}>
-            <IconButton
-              onClick={handleToggleFavorite}
-              color={template.is_favorite ? 'warning' : 'default'}
-            >
-              {template.is_favorite ? <Star /> : <StarBorder />}
-            </IconButton>
-            
             {canEditTemplate && (
               <Button
                 startIcon={<Edit />}
@@ -388,6 +270,18 @@ const TemplateDetailPage: React.FC = () => {
           </Alert>
         )}
 
+        {/* Success Snackbar */}
+        <Snackbar
+          open={!!successMessage}
+          autoHideDuration={6000}
+          onClose={() => setSuccessMessage('')}
+          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        >
+          <Alert onClose={() => setSuccessMessage('')} severity="success" sx={{ width: '100%' }}>
+            {successMessage}
+          </Alert>
+        </Snackbar>
+
         <Grid container spacing={3}>
           {/* Main Content */}
           <Grid item xs={12} lg={8}>
@@ -401,7 +295,7 @@ const TemplateDetailPage: React.FC = () => {
                   sx={{
                     width: '100%',
                     height: 400,
-                    bgcolor: template.canvas.background_color,
+                    bgcolor: template.backgroundColor || '#ffffff',
                     border: '1px solid',
                     borderColor: 'divider',
                     borderRadius: 1,
@@ -409,18 +303,23 @@ const TemplateDetailPage: React.FC = () => {
                     alignItems: 'center',
                     justifyContent: 'center',
                     position: 'relative',
-                    overflow: 'hidden'
+                    overflow: 'hidden',
+                    backgroundImage: template.backgroundImageUrl ? `url(${template.backgroundImageUrl})` : 'none',
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center'
                   }}
                 >
-                  <Box sx={{ textAlign: 'center' }}>
-                    <Description sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-                    <Typography variant="h6" color="text.secondary">
-                      ตัวอย่างเทมเพลต
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {template.dimensions.width} x {template.dimensions.height} px
-                    </Typography>
-                  </Box>
+                  {!template.backgroundImageUrl && (
+                    <Box sx={{ textAlign: 'center' }}>
+                      <Description sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+                      <Typography variant="h6" color="text.secondary">
+                        ตัวอย่างเทมเพลต
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {template.width} x {template.height} px
+                      </Typography>
+                    </Box>
+                  )}
                 </Box>
               </CardContent>
             </Card>
@@ -441,122 +340,93 @@ const TemplateDetailPage: React.FC = () => {
                       <Typography variant="body2" color="text.secondary">หมวดหมู่</Typography>
                       <Typography variant="body1">{template.category}</Typography>
                     </Box>
-                    <Box sx={{ mb: 2 }}>
-                      <Typography variant="body2" color="text.secondary">แท็ก</Typography>
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
-                        {template.tags.map((tag) => (
-                          <Chip key={tag} label={tag} size="small" variant="outlined" />
-                        ))}
-                      </Box>
-                    </Box>
                   </Grid>
                   <Grid item xs={12} md={6}>
                     <Box sx={{ mb: 2 }}>
-                      <Typography variant="body2" color="text.secondary">ขนาดไฟล์</Typography>
-                      <Typography variant="body1">{template.file_size} MB</Typography>
-                    </Box>
-                    <Box sx={{ mb: 2 }}>
                       <Typography variant="body2" color="text.secondary">ขนาดผืนผ้าใบ</Typography>
                       <Typography variant="body1">
-                        {template.dimensions.width} x {template.dimensions.height} px
+                        {template.width} x {template.height} px ({template.orientation === 'landscape' ? 'แนวนอน' : 'แนวตั้ง'})
                       </Typography>
                     </Box>
                     <Box sx={{ mb: 2 }}>
                       <Typography variant="body2" color="text.secondary">จำนวนองค์ประกอบ</Typography>
-                      <Typography variant="body1">{template.elements.length} องค์ประกอบ</Typography>
+                      <Typography variant="body1">{template.elements?.length || 0} องค์ประกอบ</Typography>
+                    </Box>
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="body2" color="text.secondary">สีพื้นหลัง</Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box
+                          sx={{
+                            width: 24,
+                            height: 24,
+                            bgcolor: template.backgroundColor,
+                            border: '1px solid',
+                            borderColor: 'divider',
+                            borderRadius: 1
+                          }}
+                        />
+                        <Typography variant="body1">{template.backgroundColor}</Typography>
+                      </Box>
                     </Box>
                   </Grid>
                 </Grid>
               </CardContent>
             </Card>
 
-            {/* Template Variables */}
-            <Card sx={{ mb: 3 }}>
-              <CardContent>
-                <Typography variant="h6" gutterBottom>
-                  ตัวแปรในเทมเพลต
-                </Typography>
-                <TableContainer>
-                  <Table>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>ชื่อตัวแปร</TableCell>
-                        <TableCell>ประเภท</TableCell>
-                        <TableCell>ค่าเริ่มต้น</TableCell>
-                        <TableCell>จำเป็น</TableCell>
-                        <TableCell>คำอธิบาย</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {template.variables.map((variable) => (
-                        <TableRow key={variable.name}>
-                          <TableCell>
-                            <Typography variant="body2" fontFamily="monospace">
-                              {`{{${variable.name}}}`}
-                            </Typography>
-                          </TableCell>
-                          <TableCell>
-                            <Chip
-                              label={variable.type === 'text' ? 'ข้อความ' : 
-                                     variable.type === 'date' ? 'วันที่' : 'ตัวเลข'}
-                              size="small"
-                              variant="outlined"
-                            />
-                          </TableCell>
-                          <TableCell>{variable.default_value}</TableCell>
-                          <TableCell>
-                            {variable.required ? (
-                              <Chip label="จำเป็น" color="error" size="small" />
-                            ) : (
-                              <Chip label="ไม่จำเป็น" color="default" size="small" />
-                            )}
-                          </TableCell>
-                          <TableCell>{variable.description}</TableCell>
+            {/* Template Elements */}
+            {template.elements && template.elements.length > 0 && (
+              <Card sx={{ mb: 3 }}>
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>
+                    องค์ประกอบในเทมเพลต
+                  </Typography>
+                  <TableContainer>
+                    <Table>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>ประเภท</TableCell>
+                          <TableCell>ตำแหน่ง</TableCell>
+                          <TableCell>ขนาด</TableCell>
+                          <TableCell>เนื้อหา</TableCell>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              </CardContent>
-            </Card>
-
-            {/* Usage History */}
-            <Card>
-              <CardContent>
-                <Typography variant="h6" gutterBottom>
-                  ประวัติการใช้งาน
-                </Typography>
-                <List>
-                  {template.usage_history.slice(0, 5).map((usage) => (
-                    <ListItem key={usage.id}>
-                      <ListItemIcon>
-                        <Avatar sx={{ bgcolor: 'primary.main' }}>
-                          <Assignment />
-                        </Avatar>
-                      </ListItemIcon>
-                      <ListItemText
-                        primary={usage.certificate_name}
-                        secondary={
-                          <Box>
-                            <Typography variant="body2" color="text.secondary">
-                              ผู้รับ: {usage.recipient_name}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              สร้างโดย {usage.created_by} • {new Date(usage.created_at).toLocaleString('th-TH')}
-                            </Typography>
-                          </Box>
-                        }
-                      />
-                    </ListItem>
-                  ))}
-                </List>
-                {template.usage_history.length > 5 && (
-                  <Button fullWidth variant="outlined" sx={{ mt: 1 }}>
-                    ดูทั้งหมด ({template.usage_history.length} รายการ)
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
+                      </TableHead>
+                      <TableBody>
+                        {template.elements.map((element, index) => (
+                          <TableRow key={element.id || index}>
+                            <TableCell>
+                              <Chip
+                                label={element.type === 'text' ? 'ข้อความ' :
+                                       element.type === 'image' ? 'รูปภาพ' :
+                                       element.type === 'shape' ? 'รูปทรง' :
+                                       element.type === 'qr' ? 'QR Code' :
+                                       element.type === 'signature' ? 'ลายเซ็น' : element.type}
+                                size="small"
+                                variant="outlined"
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Typography variant="body2">
+                                ({element.x}, {element.y})
+                              </Typography>
+                            </TableCell>
+                            <TableCell>
+                              <Typography variant="body2">
+                                {element.width} x {element.height}
+                              </Typography>
+                            </TableCell>
+                            <TableCell>
+                              <Typography variant="body2" noWrap sx={{ maxWidth: 200 }}>
+                                {element.content || element.variableName || '-'}
+                              </Typography>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </CardContent>
+              </Card>
+            )}
           </Grid>
 
           {/* Sidebar */}
@@ -574,7 +444,7 @@ const TemplateDetailPage: React.FC = () => {
                     </ListItemIcon>
                     <ListItemText
                       primary="ผู้สร้าง"
-                      secondary={template.created_by}
+                      secondary={template.createdBy || 'ไม่ระบุ'}
                     />
                   </ListItem>
                   <ListItem>
@@ -583,7 +453,13 @@ const TemplateDetailPage: React.FC = () => {
                     </ListItemIcon>
                     <ListItemText
                       primary="วันที่สร้าง"
-                      secondary={new Date(template.created_at).toLocaleDateString('th-TH')}
+                      secondary={new Date(template.createdAt).toLocaleDateString('th-TH', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
                     />
                   </ListItem>
                   <ListItem>
@@ -592,7 +468,13 @@ const TemplateDetailPage: React.FC = () => {
                     </ListItemIcon>
                     <ListItemText
                       primary="แก้ไขล่าสุด"
-                      secondary={new Date(template.updated_at).toLocaleDateString('th-TH')}
+                      secondary={new Date(template.updatedAt).toLocaleDateString('th-TH', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
                     />
                   </ListItem>
                   <ListItem>
@@ -601,7 +483,7 @@ const TemplateDetailPage: React.FC = () => {
                     </ListItemIcon>
                     <ListItemText
                       primary="การใช้งาน"
-                      secondary={`${template.usage_count} ครั้ง`}
+                      secondary={`${template.usageCount || 0} ครั้ง`}
                     />
                   </ListItem>
                 </List>
@@ -654,10 +536,10 @@ const TemplateDetailPage: React.FC = () => {
 
                   <ListItem button onClick={handleTogglePublic}>
                     <ListItemIcon>
-                      {template.is_public ? <Lock /> : <Public />}
+                      {template.isPublic ? <Lock /> : <Public />}
                     </ListItemIcon>
-                    <ListItemText 
-                      primary={template.is_public ? 'ทำให้เป็นส่วนตัว' : 'เผยแพร่สาธารณะ'} 
+                    <ListItemText
+                      primary={template.isPublic ? 'ทำให้เป็นส่วนตัว' : 'เผยแพร่สาธารณะ'}
                     />
                   </ListItem>
 
@@ -683,20 +565,20 @@ const TemplateDetailPage: React.FC = () => {
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                     <Typography variant="body2">ความนิยม</Typography>
                     <Typography variant="body2" fontWeight={600}>
-                      {Math.min(100, (template.usage_count / 50) * 100).toFixed(0)}%
+                      {Math.min(100, ((template.usageCount || 0) / 50) * 100).toFixed(0)}%
                     </Typography>
                   </Box>
                   <LinearProgress
                     variant="determinate"
-                    value={Math.min(100, (template.usage_count / 50) * 100)}
+                    value={Math.min(100, ((template.usageCount || 0) / 50) * 100)}
                     sx={{ height: 8, borderRadius: 4 }}
                   />
                 </Box>
-                
+
                 <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
                   <Paper sx={{ p: 1, textAlign: 'center' }}>
                     <Typography variant="h6" color="primary.main">
-                      {template.usage_count}
+                      {template.usageCount || 0}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
                       ครั้งที่ใช้
@@ -704,10 +586,10 @@ const TemplateDetailPage: React.FC = () => {
                   </Paper>
                   <Paper sx={{ p: 1, textAlign: 'center' }}>
                     <Typography variant="h6" color="secondary.main">
-                      {template.variables.length}
+                      {template.elements?.length || 0}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      ตัวแปร
+                      องค์ประกอบ
                     </Typography>
                   </Paper>
                 </Box>
@@ -768,22 +650,30 @@ const TemplateDetailPage: React.FC = () => {
         </Dialog>
 
         {/* Duplicate Dialog */}
-        <Dialog open={duplicateDialogOpen} onClose={() => setDuplicateDialogOpen(false)}>
+        <Dialog open={duplicateDialogOpen} onClose={() => setDuplicateDialogOpen(false)} maxWidth="sm" fullWidth>
           <DialogTitle>ทำสำเนาเทมเพลต</DialogTitle>
           <DialogContent>
-            <Typography>
+            <Typography variant="body2" gutterBottom>
               คุณต้องการทำสำเนาเทมเพลต "{template.name}" หรือไม่?
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              สำเนาจะถูกสร้างขึ้นพร้อมชื่อ "{template.name} (สำเนา)"
-            </Typography>
+            <TextField
+              fullWidth
+              label="ชื่อเทมเพลตใหม่"
+              value={duplicateName}
+              onChange={(e) => setDuplicateName(e.target.value)}
+              sx={{ mt: 2 }}
+              autoFocus
+            />
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setDuplicateDialogOpen(false)}>
+            <Button onClick={() => {
+              setDuplicateDialogOpen(false);
+              setDuplicateName('');
+            }}>
               ยกเลิก
             </Button>
-            <Button onClick={confirmDuplicate} variant="contained">
-              ทำสำเนา
+            <Button onClick={confirmDuplicate} variant="contained" disabled={!duplicateName || loading}>
+              {loading ? 'กำลังทำสำเนา...' : 'ทำสำเนา'}
             </Button>
           </DialogActions>
         </Dialog>

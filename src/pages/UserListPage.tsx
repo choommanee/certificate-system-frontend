@@ -579,9 +579,9 @@ const UserListPage: React.FC = () => {
                     </TableCell>
                     <TableCell>
                       <Chip
-                        icon={getRoleIcon(userData.role)}
-                        label={getRoleText(userData.role)}
-                        color={getRoleColor(userData.role) as any}
+                        icon={getRoleIcon(typeof userData.role === 'string' ? userData.role : userData.role?.name || '')}
+                        label={getRoleText(typeof userData.role === 'string' ? userData.role : userData.role?.name || '')}
+                        color={getRoleColor(typeof userData.role === 'string' ? userData.role : userData.role?.name || '') as any}
                         size="small"
                         variant="outlined"
                       />

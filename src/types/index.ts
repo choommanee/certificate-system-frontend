@@ -5,16 +5,16 @@ export interface User {
   email: string;
   first_name_th: string;
   last_name_th: string;
-  first_name_en?: string;
-  last_name_en?: string;
-  student_id?: string;
-  faculty?: string;
-  phone?: string;
+  first_name_en: string | null;  // ✅ API ส่ง null, ไม่ใช่ undefined
+  last_name_en: string | null;   // ✅ API ส่ง null, ไม่ใช่ undefined
+  student_id: string | null;     // ✅ API ส่ง null, ไม่ใช่ undefined
+  faculty: string | null;        // ✅ API ส่ง null, ไม่ใช่ undefined
+  phone: string | null;          // ✅ API ส่ง null, ไม่ใช่ undefined
   role_id: number;
-  role?: Role;
+  role: Role;                    // ✅ API ส่งมาเสมอ, ไม่ optional
   is_active: boolean;
   email_verified: boolean;
-  last_login?: string;
+  last_login: string | null;     // ✅ API ส่ง null, ไม่ใช่ undefined
   created_at: string;
   updated_at: string;
 }
@@ -22,8 +22,8 @@ export interface User {
 // Role Types
 export interface Role {
   id: number;
-  name: 'Admin' | 'Staff' | 'Signer' | 'Student' | 'Public';
-  description?: string;
+  name: string;                  // ✅ API ส่ง lowercase: "admin", "staff", "signer", "student"
+  description: string;           // ✅ API ส่งมาเสมอ, ไม่ optional
   permissions: string[];
   created_at: string;
 }
