@@ -1683,6 +1683,22 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
         };
       });
 
+      // Get current user UUID from localStorage or API
+      const currentUserStr = localStorage.getItem('currentUser');
+      let createdByUUID = '550e8400-e29b-41d4-a716-446655440001'; // Default admin UUID
+
+      if (currentUserStr) {
+        try {
+          const currentUser = JSON.parse(currentUserStr);
+          // If user has UUID in profile, use it; otherwise use email-based lookup
+          if (currentUser.id && currentUser.id.includes('-')) {
+            createdByUUID = currentUser.id;
+          }
+        } catch (error) {
+          console.warn('Could not parse current user from localStorage');
+        }
+      }
+
       const templateData = {
         name: saveFormData.name,
         description: saveFormData.description || `Certificate template created on ${new Date().toLocaleDateString()}`,
@@ -1696,7 +1712,8 @@ const SimpleCertificateDesigner: React.FC<SimpleCertificateDesignerProps> = ({
           elements: cleanedElements,
           variables: []
         },
-        is_default: false
+        is_default: false,
+        created_by: createdByUUID
       };
 
       // Save to database via API
